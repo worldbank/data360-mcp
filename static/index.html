@@ -516,14 +516,42 @@
         const statusLabel = document.getElementById('status-label');
         const critiqueOutput = document.getElementById('critique-output');
 
+        // Safe DOM helpers (CWE-80: never use innerHTML with variables).
+        function showChartSpinner() {
+            chartPanel.replaceChildren();
+            const spinner = document.createElement('div');
+            spinner.className = 'spinner';
+            chartPanel.appendChild(spinner);
+        }
+
+        function showChartMessage(message) {
+            chartPanel.replaceChildren();
+            const div = document.createElement('div');
+            div.style.color = 'var(--accent-red)';
+            div.textContent = message;
+            chartPanel.appendChild(div);
+        }
+
+        function showVegaRenderError(errMessage) {
+            chartPanel.replaceChildren();
+            const div = document.createElement('div');
+            div.style.cssText = 'color: var(--accent-red); padding: 1rem; text-align: center;';
+            const strong = document.createElement('strong');
+            strong.textContent = 'Vega Rendering Error:';
+            div.appendChild(strong);
+            div.appendChild(document.createElement('br'));
+            div.appendChild(document.createTextNode(errMessage));
+            chartPanel.appendChild(div);
+        }
+
         // Render Action
         btnRender.addEventListener('click', async () => {
             // Clear prior states
             errorAlert.style.display = 'none';
             btnCritique.disabled = true;
             strategyBadge.style.display = 'none';
-            chartPanel.innerHTML = '<div class="spinner"></div>';
-            specPanel.innerText = 'Generating spec...';
+            showChartSpinner();
+            specPanel.textContent = 'Generating spec...';
 
             // Gather values
             const dbId = document.getElementById('db-id').value.trim();
@@ -538,7 +566,7 @@
                 disagg = JSON.parse(document.getElementById('disagg-filters').value || '{}');
             } catch(e) {
                 showError("Invalid JSON in Disaggregation Filters: " + e.message);
-                chartPanel.innerHTML = '<div style="color: var(--accent-red);">Invalid Config</div>';
+                showChartMessage('Invalid Config');
                 return;
             }
 
@@ -563,11 +591,11 @@
                 }
 
                 currentSpec = data.spec;
-                strategyBadge.innerText = `${data.strategy.toUpperCase()}: ${data.reason}`;
+                strategyBadge.textContent = `${data.strategy.toUpperCase()}: ${data.reason}`;
                 strategyBadge.style.display = 'inline-block';
 
                 // Show JSON
-                specPanel.innerText = JSON.stringify(currentSpec, null, 2);
+                specPanel.textContent = JSON.stringify(currentSpec, null, 2);
 
                 // Embed Vega-Lite
                 vegaEmbed('#chart-panel', currentSpec, {
@@ -577,14 +605,12 @@
                 }).then(() => {
                     btnCritique.disabled = false;
                 }).catch(err => {
-                    chartPanel.innerHTML = `<div style="color: var(--accent-red); padding: 1rem; text-align: center;">
-                        <strong>Vega Rendering Error:</strong><br>${err.message}
-                    </div>`;
+                    showVegaRenderError(err.message);
                 });
 
             } catch(err) {
                 showError(err.message);
-                chartPanel.innerHTML = '<div style="color: var(--accent-red);">Generation Failed</div>';
+                showChartMessage('Generation Failed');
             }
         });
 
@@ -621,19 +647,19 @@
 
                 // Render result
                 const score = parseFloat(data.score);
-                scoreRing.innerText = score.toFixed(2);
+                scoreRing.textContent = score.toFixed(2);
 
                 if (data.success) {
                     scoreRing.className = 'score-circle pass';
                     statusLabel.className = 'status-badge pass';
-                    statusLabel.innerText = 'PASS';
+                    statusLabel.textContent = 'PASS';
                 } else {
                     scoreRing.className = 'score-circle fail';
                     statusLabel.className = 'status-badge fail';
-                    statusLabel.innerText = 'FAIL';
+                    statusLabel.textContent = 'FAIL';
                 }
 
-                critiqueOutput.innerText = data.reason || "No detail provided.";
+                critiqueOutput.textContent = data.reason || "No detail provided.";
 
                 critiqueLoading.style.display = 'none';
                 critiqueContent.style.display = 'block';
@@ -646,7 +672,7 @@
         });
 
         function showError(msg) {
-            errorAlert.innerText = msg;
+            errorAlert.textContent = msg;
             errorAlert.style.display = 'block';
         }
     </script>

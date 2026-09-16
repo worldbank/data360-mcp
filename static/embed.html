@@ -28,7 +28,7 @@
     <script>
         function showError(msg, isRed = true) {
             const container = document.getElementById('vis');
-            container.innerHTML = '';
+            container.replaceChildren();
             const p = document.createElement('p');
             if (isRed) {
                 p.style.color = 'red';
