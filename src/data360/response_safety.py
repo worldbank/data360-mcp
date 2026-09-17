@@ -20,7 +20,7 @@ import html
 from typing import Any
 
 __all__ = [
-    "escape_jsonrpc_id",
+    "jsonrpc_id",
     "escape_text",
     "install_response_hardening",
 ]
@@ -35,13 +35,17 @@ def escape_text(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
-def escape_jsonrpc_id(msg_id: Any) -> Any:
-    """Echo a JSON-RPC id, HTML-escaping string ids.
+def jsonrpc_id(msg_id: Any) -> Any:
+    """Echo a JSON-RPC id verbatim, dropping values the protocol does not allow.
 
-    JSON-RPC ids are normally integers; non-string ids pass through unchanged so
-    numeric round-tripping is unaffected.
+    JSON-RPC requires the response to carry the request's id unchanged so clients
+    can correlate the two — entity-encoding it (or any other presentation
+    transform) would break that. Only ``str``, ``int``, ``float`` and ``None`` are
+    valid ids; anything else becomes ``null`` rather than being echoed.
     """
-    return html.escape(msg_id, quote=True) if isinstance(msg_id, str) else msg_id
+    if msg_id is None or isinstance(msg_id, (str, int, float)):
+        return msg_id
+    return None
 
 
 def install_response_hardening(app: Any) -> None:

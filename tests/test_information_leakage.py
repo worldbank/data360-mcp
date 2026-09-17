@@ -122,6 +122,14 @@ class TestRateLimitScriptLogging:
         assert "abc" not in logged and "#" not in logged
         assert logged == "https://host:8443/mcp?code=REDACTED&x=REDACTED"
 
+    def test_encoded_control_characters_in_a_query_name_are_re_encoded(self, script):
+        """parse_qsl decodes %0A into a newline; the logged name must not carry it."""
+        logged = script.redacted_url("https://host/mcp?%0Aforged=1&x=2")
+
+        assert "\n" not in logged
+        assert "%0Aforged=REDACTED" in logged
+        assert logged.endswith("x=REDACTED")
+
     def test_plain_endpoint_is_kept_for_the_operator(self, script):
         url = "http://localhost:8021/mcp"
 

@@ -153,8 +153,11 @@ def redacted_url(url: str) -> str:
     host = parts.hostname or ""
     if parts.port:
         host = f"{host}:{parts.port}"
+    # parse_qsl percent-decodes names, so an operator URL like "?%0Aforged=x" would
+    # otherwise put a real newline into the log line; re-encode before printing.
     query = "&".join(
-        f"{name}=REDACTED" for name, _value in urllib.parse.parse_qsl(parts.query)
+        f"{urllib.parse.quote(str(name), safe='')}=REDACTED"
+        for name, _value in urllib.parse.parse_qsl(parts.query)
     )
     return urllib.parse.urlunsplit((parts.scheme, host, parts.path, query, ""))
 

@@ -24,9 +24,9 @@ from data360.otel_setup import (
     instrument_httpx_outbound,
 )
 from data360.response_safety import (
-    escape_jsonrpc_id,
     escape_text,
     install_response_hardening,
+    jsonrpc_id,
 )
 
 _audit_logger = logging.getLogger("audit")
@@ -146,7 +146,7 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                         status_code=403,
                         content={
                             "jsonrpc": "2.0",
-                            "id": escape_jsonrpc_id(body.get("id")),
+                            "id": jsonrpc_id(body.get("id")),
                             # `error_msg` embeds the offending tool name/parameter,
                             # so it is request-derived: escape before reflecting.
                             "error": {
@@ -168,7 +168,7 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                             status_code=403,
                             content={
                                 "jsonrpc": "2.0",
-                                "id": escape_jsonrpc_id(body.get("id")),
+                                "id": jsonrpc_id(body.get("id")),
                                 "error": {
                                     "code": -32001,
                                     "message": escape_text(error_msg),
@@ -369,8 +369,8 @@ async def get_viz_spec_endpoint(req: VizSpecRequest):
         # generic message (CWE-201: no backend internals in sent data).
         _logger.warning(
             "Viz spec generation failed for %s/%s: %s",
-            req.database_id,
-            req.indicator_id,
+            repr(req.database_id),
+            repr(req.indicator_id),
             repr(res.get("error")),
         )
         return JSONResponse(

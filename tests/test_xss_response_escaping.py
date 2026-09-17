@@ -110,18 +110,32 @@ class TestReflectedJsonResponses:
         assert PAYLOAD not in response.text
         assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
 
-    def test_jsonrpc_id_is_escaped(self, client):
+    def test_jsonrpc_id_is_echoed_verbatim(self, client):
+        """JSON-RPC requires the request id back unchanged so clients can correlate."""
         response = client.post(
             "/mcp",
             json={
                 "jsonrpc": "2.0",
-                "id": PAYLOAD,
+                "id": "req-<1>",
                 "method": "tools/call",
                 "params": {"name": PAYLOAD, "arguments": {}},
             },
         )
 
-        assert response.json()["id"] == "&lt;img src=x onerror=alert(1)&gt;"
+        assert response.json()["id"] == "req-<1>"
+
+    def test_non_protocol_id_is_dropped(self, client):
+        response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": {"not": "a valid id"},
+                "method": "tools/call",
+                "params": {"name": PAYLOAD, "arguments": {}},
+            },
+        )
+
+        assert response.json()["id"] is None
 
     def test_responses_are_marked_non_sniffable(self, client):
         response = client.post(
