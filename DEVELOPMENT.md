@@ -44,6 +44,25 @@ uv run pytest
 uv run pytest --cov=src/data360
 ```
 
+## Live smoke test
+
+`pytest` exercises the server in-process. To prove behaviour on a **real, running
+server**, use the live smoke test — it boots `data360.server:app` locally, waits
+for readiness, drives the MCP transport and shuts the server down again:
+
+```bash
+uv run poe live-smoke                    # boots on port 8021
+uv run python scripts/live_smoke.py --port 8022
+uv run python scripts/live_smoke.py --offline     # skip checks that call the Data360 API
+uv run python scripts/live_smoke.py --attach      # test a server you already have running
+```
+
+It asserts the CWE-117 and CWE-80 remediations hold on the live server (CR/LF
+payloads stay on one escaped log line; reflected values in responses and in the
+renderer page stay escaped, with `nosniff` set) and that normal traffic still
+works (tools/list, a real search). Exit code 0 means every check passed. Run it
+before merging security fixes and before a Veracode resubmission.
+
 ## Code Quality
 
 ```bash
