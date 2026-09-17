@@ -364,9 +364,18 @@ async def get_viz_spec_endpoint(req: VizSpecRequest):
         return JSONResponse(status_code=500, content={"error": "Failed to generate visualization spec due to an internal error."})
 
     if res.get("error"):
-        # Spec generation errors can quote the requested indicator/database ids.
+        # Generation errors quote indicator/database ids and can carry upstream
+        # response text, so the detail goes to the log and the caller gets a
+        # generic message (CWE-201: no backend internals in sent data).
+        _logger.warning(
+            "Viz spec generation failed for %s/%s: %s",
+            req.database_id,
+            req.indicator_id,
+            repr(res.get("error")),
+        )
         return JSONResponse(
-            status_code=400, content={"error": escape_text(res.get("error"))}
+            status_code=400,
+            content={"error": "Visualization could not be generated for this request."},
         )
 
     spec = res.get("spec")
