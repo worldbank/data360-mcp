@@ -9,8 +9,10 @@ assert on what a client receives or sends.
 
 from __future__ import annotations
 
+import importlib.util
 import pathlib
 import re
+import sys
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -18,6 +20,7 @@ from fastapi.testclient import TestClient
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEMO_PAGE = REPO_ROOT / "static" / "index.html"
+RATE_LIMIT_SCRIPT = REPO_ROOT / "scripts" / "test_rate_limits.py"
 
 BACKEND_DETAIL = "Indicator 'WB_SECRET_IDNO' not found: HTTP 404 {'trace': 'backend-internal'}"
 GENERIC_MESSAGE = "Visualization could not be generated for this request."
@@ -80,6 +83,62 @@ class TestVizSpecErrorIsGeneric:
 
         assert response.status_code == 500
         assert "internal stack detail" not in response.text
+
+
+class TestRateLimitScriptLogging:
+    """CWE-532: the load-test script's log output must not carry the endpoint's secrets."""
+
+    @pytest.fixture(scope="module")
+    def script(self):
+        # Loaded by path (scripts/ is not a package); register before exec because the
+        # module uses dataclasses.
+        module_spec = importlib.util.spec_from_file_location(
+            "rate_limits_under_test", RATE_LIMIT_SCRIPT
+        )
+        assert module_spec is not None and module_spec.loader is not None
+        module = importlib.util.module_from_spec(module_spec)
+        sys.modules["rate_limits_under_test"] = module
+        module_spec.loader.exec_module(module)
+        return module
+
+    def test_query_secret_is_masked(self, script):
+        url = "https://wbplatformmcpqa.azure-api.net/mcp?subscription-key=SECRET123"
+
+        logged = script.redacted_url(url)
+
+        assert "SECRET123" not in logged
+        assert logged == "https://wbplatformmcpqa.azure-api.net/mcp?subscription-key=REDACTED"
+
+    def test_userinfo_is_dropped(self, script):
+        logged = script.redacted_url("https://user:pw@qa.internal/mcp")
+
+        assert "pw" not in logged
+        assert "user" not in logged
+        assert logged == "https://qa.internal/mcp"
+
+    def test_all_query_values_are_masked_and_fragment_dropped(self, script):
+        logged = script.redacted_url("https://host:8443/mcp?code=abc&x=1#frag")
+
+        assert "abc" not in logged and "#" not in logged
+        assert logged == "https://host:8443/mcp?code=REDACTED&x=REDACTED"
+
+    def test_plain_endpoint_is_kept_for_the_operator(self, script):
+        url = "http://localhost:8021/mcp"
+
+        assert script.redacted_url(url) == url
+
+    def test_flagged_line_no_longer_prints_the_raw_url(self, script):
+        """The reported print must go through the redactor.
+
+        Source-level on purpose: exercising it otherwise means running a load test
+        against a live endpoint. The reported line was
+        `print(f"MCP Server URL: {mcp_url}")`.
+        """
+        source = RATE_LIMIT_SCRIPT.read_text()
+
+        assert "print(f\"MCP Server URL: {mcp_url}\")" not in source
+        assert 'print(f"MCP Server URL: {redacted_url(mcp_url)}")' in source
+        assert '"mcp_url": redacted_url(mcp_url),' in source
 
 
 class TestDemoPageDoesNotHandleCredentials:
