@@ -40,6 +40,7 @@ import argparse
 import json
 import re
 import sys
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,17 +52,38 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 from data360.providers import GroupHierarchyManager  # noqa: E402
 
 REPO_ROOT = _REPO_ROOT
+# The only origin this script is allowed to fetch from. Pinning it is what stops a
+# caller-supplied URL from pointing the request at an internal address, a
+# file:// path, or any other host (CWE-918).
+FMR_ORIGIN = "https://fmr.worldbank.org"
 HIERARCHY_FILE = REPO_ROOT / "examples" / "H_AREA_GROUPS38.json"
 CODELIST_FILE = REPO_ROOT / "examples" / "CL_REF_GROUPINGS.json"
 OUTPUT_FILE = REPO_ROOT / "src" / "data360" / "ref_area_groups.json"
 
 
+def validated_fmr_url(url: str) -> str:
+    """Return *url* only when it targets the FMR origin over https (CWE-918).
+
+    The destination of this request must not be steerable by the caller: without
+    this check an arbitrary URL (``file:///etc/passwd``, a cloud metadata
+    endpoint, an internal host) would be fetched server-side.
+    """
+    parsed = urllib.parse.urlparse(url)
+    expected = urllib.parse.urlparse(FMR_ORIGIN)
+    if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
+        raise ValueError(f"refusing to fetch outside {FMR_ORIGIN}: {url!r}")
+    return url
+
+
 def fetch_fmr_data(url: str, output_path: Path) -> None:
     """Download JSON from FMR and save it to output_path.
 
-    ``output_path`` is refused unless it stays inside the repository: the write
-    target must never be steerable outside the checkout (CWE-73).
+    Both the destination (CWE-918) and the write target (CWE-73) are pinned: the
+    URL must be on :data:`FMR_ORIGIN`, and ``output_path`` must stay inside the
+    repository.
     """
+    url = validated_fmr_url(url)
+
     resolved = output_path.resolve()
     if not resolved.is_relative_to(REPO_ROOT):
         raise ValueError(f"refusing to write outside the repository: {resolved}")

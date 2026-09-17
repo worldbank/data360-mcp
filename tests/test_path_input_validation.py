@@ -30,6 +30,12 @@ from data360.visualization import (
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
+# A real FMR URL: the only destination build_ref_area_groups may fetch.
+FMR_URL = (
+    "https://fmr.worldbank.org/FMR/sdmx/v2/structure/hierarchy/"
+    "WB/H_REF_AREA_GROUPS/38.0?format=sdmx-json"
+)
+
 # A label that is not a string: the CWE-73 validation must reject it outright.
 INVALID_LABEL = 42
 
@@ -248,12 +254,54 @@ class TestFmrVersionArgument:
             fmr_script.validated_version(hostile, "--hierarchy-version")
 
 
+class TestFmrDestinationAllowList:
+    """CWE-918: only the pinned FMR origin may be fetched."""
+
+    @pytest.fixture
+    def fmr_urls(self, fmr_script, monkeypatch):
+        """Stub urlopen so the test proves which URLs are even attempted."""
+        attempts: list[str] = []
+
+        def _stub(request, *args, **kwargs):
+            attempts.append(request.full_url)
+            raise RuntimeError("stubbed network")
+
+        monkeypatch.setattr(fmr_script.urllib.request, "urlopen", _stub)
+        return attempts
+
+    @pytest.mark.parametrize(
+        "hostile",
+        [
+            "file:///etc/passwd",
+            "file:///tmp/anything.json",
+            "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+            "http://localhost:8021/mcp",
+            "http://127.0.0.1:8021/mcp",
+            "https://evil.example.com/FMR/sdmx/v2/structure/hierarchy/WB/H_REF_AREA_GROUPS/",
+            "https://fmr.worldbank.org.evil.example.com/x",
+        ],
+    )
+    def test_non_fmr_destinations_are_refused_without_a_request(
+        self, fmr_script, fmr_urls, hostile
+    ):
+        with pytest.raises(ValueError, match="refusing to fetch outside"):
+            fmr_script.fetch_fmr_data(hostile, REPO_ROOT / "examples" / "x.json")
+
+        assert fmr_urls == [], f"a request was attempted for {hostile!r}"
+
+    def test_the_fmr_origin_is_allowed(self, fmr_script, fmr_urls):
+        with pytest.raises(RuntimeError, match="stubbed network"):
+            fmr_script.fetch_fmr_data(FMR_URL, REPO_ROOT / "examples" / "x.json")
+
+        assert fmr_urls == [FMR_URL]
+
+
 class TestFmrOutputContainment:
     def test_refuses_to_write_outside_the_repository(self, fmr_script, tmp_path):
         outside = tmp_path.parent / "outside.json"
 
         with pytest.raises(ValueError, match="outside the repository"):
-            fmr_script.fetch_fmr_data("https://example.invalid/x", outside)
+            fmr_script.fetch_fmr_data(FMR_URL, outside)
 
     def test_accepts_a_path_inside_the_repository(self, fmr_script, monkeypatch):
         inside = REPO_ROOT / "examples" / "ignored-by-this-test.json"
@@ -266,4 +314,4 @@ class TestFmrOutputContainment:
         monkeypatch.setattr(fmr_script.urllib.request, "urlopen", _boom)
 
         with pytest.raises(RuntimeError, match="stubbed network"):
-            fmr_script.fetch_fmr_data("https://example.invalid/x", inside)
+            fmr_script.fetch_fmr_data(FMR_URL, inside)
