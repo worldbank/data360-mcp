@@ -40,7 +40,10 @@ for _arg in sys.argv:
         try:
             _parsed_port = int(_arg.split("=", 1)[1])
         except ValueError:
-            logging.warning("Could not parse port from argv argument '%s'; using default.", _arg)
+            logging.warning(
+                "Could not parse port from argv argument %s; using default.",
+                repr(_arg),
+            )
         break
     if _arg == "--port":
         _idx = sys.argv.index(_arg)
@@ -115,7 +118,7 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                     "X-Forwarded-For",
                     request.client.host if request.client else "unknown",
                 )
-                logging.info(f"tools/list called from IP: {client_ip}")
+                logging.info(f"tools/list called from IP: {repr(client_ip)}")
 
             # Validate tools/call requests
             if method == "tools/call":
@@ -132,7 +135,7 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                 is_valid, error_msg = validate_tool_call(tool_name, arguments)
                 if not is_valid:
                     logging.warning(
-                        f"Security violation: {error_msg} | Tool: {tool_name}"
+                        f"Security violation: {repr(error_msg)} | Tool: {repr(tool_name)}"
                     )
                     return JSONResponse(
                         status_code=403,
@@ -149,7 +152,7 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                     if not is_valid:
                         logging.warning(
                             "Search query blocked: %s",
-                            str(arguments)[:200],
+                            repr(str(arguments)[:200]),
                         )
                         return JSONResponse(
                             status_code=403,
@@ -201,12 +204,12 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
         properties = {
             "session_id": session_id,
-            "requestor_id": requestor_id,
+            "requestor_id": repr(requestor_id),
             "timestamp": timestamp,
-            "prompt": prompt,
+            "prompt": repr(prompt),
             "prompt_hash": prompt_hash,
             "status_code": str(response.status_code),
-            "path": request.url.path,
+            "path": repr(request.url.path),
         }
 
         # Log to traces with custom dimensions
@@ -340,7 +343,7 @@ async def get_viz_spec_endpoint(req: VizSpecRequest):
             charts_api_url_override=None,
         )
     except Exception as e:
-        _logger.exception("Failed to generate viz spec: %s", e)
+        _logger.exception("Failed to generate viz spec: %s", repr(e))
         return JSONResponse(status_code=500, content={"error": "Failed to generate visualization spec due to an internal error."})
 
     if res.get("error"):

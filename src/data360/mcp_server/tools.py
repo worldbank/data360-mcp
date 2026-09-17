@@ -342,7 +342,7 @@ def get_cached_vega_libs() -> tuple[str, str, str, str]:
             )
         except Exception as e:
             logging.getLogger("data360").warning(
-                "Failed to load local Vega library scripts: %s", e
+                "Failed to load local Vega library scripts: %s", repr(e)
             )
             vega_js = vega_lite_js = vega_embed_js = vega_interp_js = ""
         res = (vega_js, vega_lite_js, vega_embed_js, vega_interp_js)

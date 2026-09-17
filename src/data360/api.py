@@ -652,7 +652,7 @@ def _get_items_from_response(response_data: dict[str, Any]) -> list[SeriesDescri
                 items.append(SeriesDescription.model_validate(series_description))
             except Exception as e:
                 _logger.warning(
-                    f"Failed to validate series_description: [{series_description}], error: {e}, skipping item"
+                    f"Failed to validate series_description: [{repr(series_description)}], error: {repr(e)}, skipping item"
                 )
     return items
 
@@ -913,9 +913,9 @@ def _enrich_search_results(
             raw["database_id"] = primary.database_id
             _logger.debug(
                 "Redirected %s -> %s/%s (primary source)",
-                original_idno,
-                primary.database_id,
-                primary.indicator_id,
+                repr(original_idno),
+                repr(primary.database_id),
+                repr(primary.indicator_id),
             )
         elif primary and primary.metadata_id and not primary.database_id:
             # database_id is None (e.g. META_SI.POV.MPWB) — cannot redirect
@@ -923,8 +923,8 @@ def _enrich_search_results(
             _logger.warning(
                 "Skipping primary redirect for %s: metadata_link has type='primary' "
                 "but database_id is None (metadata_id=%s)",
-                raw.get("idno"),
-                primary.metadata_id,
+                repr(raw.get("idno")),
+                repr(primary.metadata_id),
             )
         elif not primary and query and isinstance(raw.get("connected_entities"), list):
             # Check if query matches a connected entity (SearchV3 redirect direction is reversed)
@@ -937,10 +937,10 @@ def _enrich_search_results(
                     original_idno = entity.get("idno")
                     _logger.debug(
                         "Mapped primary source %s -> %s/%s via connected_entities for query %s",
-                        original_idno,
-                        raw.get("database_id"),
-                        raw.get("idno"),
-                        query,
+                        repr(original_idno),
+                        repr(raw.get("database_id")),
+                        repr(raw.get("idno")),
+                        repr(query),
                     )
                     break
 
@@ -1032,17 +1032,17 @@ async def _backfill_primary_metadata(
                         ind.time_period_range = f"{start}-{end}"
                     _logger.debug(
                         "Backfilled primary metadata for %s/%s: latest=%s range=%s",
-                        ind.database_id,
-                        ind.idno,
-                        ind.latest_data,
-                        ind.time_period_range,
+                        repr(ind.database_id),
+                        repr(ind.idno),
+                        repr(ind.latest_data),
+                        repr(ind.time_period_range),
                     )
         except Exception as e:
             _logger.warning(
                 "Failed to backfill primary metadata for %s/%s: %s",
-                ind.database_id,
-                ind.idno,
-                e,
+                repr(ind.database_id),
+                repr(ind.idno),
+                repr(e),
             )
 
     await asyncio.gather(*(_fetch_and_patch(ind) for ind in unique_redirected))
@@ -1154,13 +1154,13 @@ async def search(  # noqa: PLR0911
     # When a client sends query="" or queries=[] alongside the real parameter
     # (e.g. query_groups), treat these as "not provided" — identical to None.
     if query is not None and not query.strip():
-        _logger.debug("query='%s' normalised to None (empty/whitespace-only)", query)
+        _logger.debug("query=%s normalised to None (empty/whitespace-only)", repr(query))
         query = None
     if queries is not None and not any(q and q.strip() for q in queries):
-        _logger.debug("queries=%r normalised to None (all entries empty)", queries)
+        _logger.debug("queries=%s normalised to None (all entries empty)", repr(queries))
         queries = None
     if query_groups is not None and not query_groups:
-        _logger.debug("query_groups=%r normalised to None (empty list)", query_groups)
+        _logger.debug("query_groups=%s normalised to None (empty list)", repr(query_groups))
         query_groups = None
 
     if query_groups is not None:
@@ -1451,7 +1451,7 @@ async def search(  # noqa: PLR0911
                         break
             except Exception as e:
                 _logger.warning(
-                    "Failed to verify regional coverage for %s: %s", ind.idno, e
+                    "Failed to verify regional coverage for %s: %s", repr(ind.idno), repr(e)
                 )
 
         await asyncio.gather(
@@ -1519,7 +1519,7 @@ async def _build_multi_query_response(
                                 ind.covers_country[c] = queried.get(c, False)
                     break
         except Exception as e:
-            _logger.warning("Failed to verify coverage for %s: %s", ind.idno, e)
+            _logger.warning("Failed to verify coverage for %s: %s", repr(ind.idno), repr(e))
 
     # First pass: enrich indicators and collect verification tasks
     enriched_lists = []
@@ -1791,8 +1791,8 @@ async def get_metadata(
     if _degraded is not None:
         _logger.info(
             "Reusing degraded metadata for %s/%s (cooldown active)",
-            database_id,
-            indicator_id,
+            repr(database_id),
+            repr(indicator_id),
         )
         return _degraded
 
@@ -1925,10 +1925,10 @@ async def get_metadata(
     _metadata_cache.set_degraded(_cache_key, result)
     _logger.warning(
         "Metadata degraded for %s/%s (cooldown %.0fs): %s",
-        database_id,
-        indicator_id,
+        repr(database_id),
+        repr(indicator_id),
         data360_config.degradation_cooldown_seconds,
-        error_message,
+        repr(error_message),
     )
     return result
 
@@ -2169,10 +2169,10 @@ async def get_data(
         if (start_year, end_year) != (resolved_start, resolved_end):
             _logger.info(
                 "Resolved time range %s-%s from start_year=%s end_year=%s",
-                resolved_start,
-                resolved_end,
-                start_year,
-                end_year,
+                repr(resolved_start),
+                repr(resolved_end),
+                repr(start_year),
+                repr(end_year),
             )
         start_year, end_year = resolved_start, resolved_end
 
@@ -2230,16 +2230,16 @@ async def get_data(
             # Fatal: indicator not found or completely unavailable.
             _logger.warning(
                 "Aborting get_data for %s: indicator metadata missing. Error: %s",
-                indicator_id,
-                metadata_res.error,
+                repr(indicator_id),
+                repr(metadata_res.error),
             )
             return IndicatorDataResponse(error=metadata_res.error)
         # Non-fatal: disaggregation lookup failed but indicator metadata is valid.
         # Proceed without validated disaggregation defaults.
         _logger.warning(
             "Non-fatal metadata error for %s (proceeding without disaggregation defaults): %s",
-            indicator_id,
-            metadata_res.error,
+            repr(indicator_id),
+            repr(metadata_res.error),
         )
 
     api_metadata = metadata_res.indicator_metadata or {}
@@ -2256,7 +2256,7 @@ async def get_data(
         disaggregation_filters, available_disaggregations
     )
     if validation_errors:
-        _logger.warning(f"Validation errors for {indicator_id}: {validation_errors}")
+        _logger.warning(f"Validation errors for {repr(indicator_id)}: {repr(validation_errors)}")
 
     # Use only valid filters for building params
     effective_disagg = _build_disaggregation_params(
@@ -2266,7 +2266,7 @@ async def get_data(
     ref_area_unpinned = not country_code and "REF_AREA" not in params
     try:
         client = get_shared_httpx_client()
-        _logger.debug("Fetching data from %s with params: %s", data_url, params)
+        _logger.debug("Fetching data from %s with params: %s", repr(data_url), repr(params))
         data_res = await client.get(data_url, params=params)
         data_res.raise_for_status()
 
@@ -2407,7 +2407,7 @@ async def get_indicators(database_id: str) -> list[str]:
         return []
 
     except Exception as e:
-        _logger.error(f"Failed to fetch indicators for {database_id}: {e}")
+        _logger.error(f"Failed to fetch indicators for {repr(database_id)}: {repr(e)}")
         raise
 
 
@@ -2527,8 +2527,8 @@ async def get_data_api_url(
             )
         _logger.warning(
             "Non-fatal metadata error for %s in get_data_api_url (proceeding): %s",
-            indicator_id,
-            metadata_res.error,
+            repr(indicator_id),
+            repr(metadata_res.error),
         )
 
     # Process valid disaggregations into {dim: [values]} format
@@ -2629,8 +2629,8 @@ async def _fetch_all_pages(
                 "_fetch_all_pages: hit safety page limit (%d) for %s/%s after %d rows. "
                 "Returning partial results.",
                 _MAX_PAGES,
-                database_id,
-                indicator_id,
+                repr(database_id),
+                repr(indicator_id),
                 len(all_rows),
             )
             break
@@ -2654,9 +2654,9 @@ async def _fetch_all_pages(
             _logger.warning(
                 "Pagination error at offset %d for %s/%s: %s",
                 offset,
-                database_id,
-                indicator_id,
-                page.error,
+                repr(database_id),
+                repr(indicator_id),
+                repr(page.error),
             )
             break
 
@@ -2895,7 +2895,7 @@ def _build_group_summary(
             "_build_group_summary: dropped %d duplicate TIME_PERIOD row(s) for group %s. "
             "Pass disaggregation_filters to narrow to a single series and avoid this.",
             n_dropped,
-            group_key,
+            repr(group_key),
         )
 
     if df.empty:
