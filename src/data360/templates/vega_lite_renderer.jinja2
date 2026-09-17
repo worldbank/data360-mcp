@@ -46,7 +46,7 @@
   <body>
     {% if pre_loaded_spec %}
     <script>
-      window.PRE_LOADED_SPEC = {{ pre_loaded_spec | safe }};
+      window.PRE_LOADED_SPEC = {{ pre_loaded_spec | tojson }};
     </script>
     {% endif %}
     <div id="vis"></div>
@@ -64,6 +64,31 @@
         display.style.display = 'block';
         document.getElementById('error-message').textContent = message;
         document.getElementById('error-stack').textContent = stack || 'No stack trace available';
+      }
+
+      // CWE-80: render error/diagnostic output with textContent only, so
+      // tool-result content can never become executable markup.
+      function showInlineError(message) {
+        const vis = document.getElementById('vis');
+        vis.replaceChildren();
+        const p = document.createElement('p');
+        p.style.color = 'red';
+        p.textContent = message;
+        vis.appendChild(p);
+      }
+
+      function showDiagnostic(message) {
+        const vis = document.getElementById('vis');
+        vis.replaceChildren();
+        const div = document.createElement('div');
+        const p = document.createElement('p');
+        p.textContent = 'No visualization spec available.';
+        const pre = document.createElement('pre');
+        pre.style.cssText = 'white-space: pre-wrap; font-size: 11px; background: #fee; padding: 8px; border: 1px solid #fcc; font-family: monospace;';
+        pre.textContent = message;
+        div.appendChild(p);
+        div.appendChild(pre);
+        vis.appendChild(div);
       }
 
       async function logToServer(msg, detail) {
@@ -108,7 +133,7 @@
 
         app.ontoolresult = async (result) => {
           if (result.isError) {
-            document.getElementById('vis').innerHTML = `<p style="color:red;">Error: ${result.content || "Failed to render chart"}</p>`;
+            showInlineError(`Error: ${result.content || "Failed to render chart"}`);
             return;
           }
 
@@ -149,16 +174,12 @@
               showError(`Failed to render chart spec: ${err.message}`, err.stack);
             });
           } else {
-            document.getElementById('vis').innerHTML = `
-              <div>
-                <p>No visualization spec available.</p>
-                <pre style="white-space: pre-wrap; font-size: 11px; background: #fee; padding: 8px; border: 1px solid #fcc; font-family: monospace;">
-Result Keys: ${result ? Object.keys(result).join(', ') : 'null'}
-Fetch Error: ${fetchError || 'none'}
-Result JSON: ${result ? JSON.stringify(result, null, 2) : 'null'}
-                </pre>
-              </div>
-            `;
+            const lines = [
+              `Result Keys: ${result ? Object.keys(result).join(', ') : 'null'}`,
+              `Fetch Error: ${fetchError || 'none'}`,
+              `Result JSON: ${result ? JSON.stringify(result, null, 2) : 'null'}`,
+            ];
+            showDiagnostic(lines.join('\n'));
           }
         };
 

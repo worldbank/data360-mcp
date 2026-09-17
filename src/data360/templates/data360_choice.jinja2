@@ -300,7 +300,7 @@
       const options = payload.options || [];
 
       promptEl.textContent = prompt;
-      containerEl.innerHTML = "";
+      containerEl.replaceChildren();
 
       options.forEach(opt => {
         const btn = document.createElement('button');
@@ -326,7 +326,7 @@
 
             // Enter specify mode
             btn.classList.add('specify-mode');
-            btn.innerHTML = '';
+            btn.replaceChildren();
 
             // Disable other buttons
             const cards = containerEl.querySelectorAll('.choice-card');
@@ -387,7 +387,7 @@
 
               btn.classList.remove('specify-mode');
               btn.classList.add('selected');
-              btn.innerHTML = '';
+              btn.replaceChildren();
 
               const finalTxt = document.createElement('div');
               finalTxt.className = 'choice-text';

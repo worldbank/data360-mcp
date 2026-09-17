@@ -121,9 +121,19 @@
     const mcpApp = new McpAppClient();
     const visDiv = document.getElementById('vis');
 
+    // CWE-80: error output uses textContent only, so spec/error content can
+    // never become executable markup.
+    function showChartError(message) {
+      visDiv.replaceChildren();
+      const p = document.createElement('p');
+      p.style.color = 'red';
+      p.textContent = message;
+      visDiv.appendChild(p);
+    }
+
     function renderChart(spec, strategy) {
       if (!spec) {
-        visDiv.innerHTML = '<p>No visualization spec available</p>';
+        showChartError('No visualization spec available');
         mcpApp.reportSize();
         return;
       }
@@ -138,11 +148,11 @@
           mcpApp.reportSize();
         }).catch(err => {
           console.error(err);
-          visDiv.innerHTML = `<p style="color:red;">Failed to render chart spec: ${err.message}</p>`;
+          showChartError(`Failed to render chart spec: ${err.message}`);
           mcpApp.reportSize();
         });
       } catch (e) {
-        visDiv.innerHTML = `<p style="color:red;">Error preparing spec: ${e.message}</p>`;
+        showChartError(`Error preparing spec: ${e.message}`);
         mcpApp.reportSize();
       }
     }
