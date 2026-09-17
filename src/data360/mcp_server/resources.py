@@ -6,6 +6,7 @@ Includes ``data360://agent-recipe`` for host integrators (LangGraph / data360-mc
 
 import json
 from datetime import datetime
+from typing import Any
 
 from fastmcp.apps import AppConfig, ResourceCSP
 from data360.providers import get_database_mapping
@@ -369,7 +370,24 @@ async def vega_lite_renderer(spec: str | None = None) -> str:
     settings = get_mcp_server_settings()
     port = settings.port or 8021
     server_base = getattr(settings, "server_base_url", None) or f"http://localhost:{port}"
-    return render_template("vega_lite_renderer.jinja2", server_base=server_base, pre_loaded_spec=spec)
+    # CWE-80: `spec` arrives via the resource URI template (?spec=) and is
+    # therefore caller-controlled. Accept only valid JSON objects and pass the
+    # parsed value so the template can emit it with the `tojson` filter
+    # (contextual escaping for script context). Anything else renders no
+    # preloaded spec rather than reflecting raw input into the page.
+    pre_loaded_spec: dict[str, Any] | None = None
+    if spec:
+        try:
+            parsed = json.loads(spec)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict):
+            pre_loaded_spec = parsed
+    return render_template(
+        "vega_lite_renderer.jinja2",
+        server_base=server_base,
+        pre_loaded_spec=pre_loaded_spec,
+    )
 
 
 @mcp.resource(
