@@ -337,6 +337,58 @@ class VizSpecRequest(BaseModel):
     series_labels: dict[str, str] | None = None
 
 
+_INTERNAL_FIELD_PREFIX = "_"
+
+
+def _strip_unreferenced_internal_fields(spec: dict) -> dict:
+    """Drop spec data fields the spec itself never references (CWE-201, line 353).
+
+    The visualization pipeline carries internal helper columns (``_label_y``,
+    ``_d360_lseg``, ``_d360_ygap``) alongside the chart data. Most chart types
+    never reference them, so they are implementation details that should not be
+    sent to a client. A field is only dropped when its name does not appear
+    anywhere else in the spec — the end-label and line-gap chart types do
+    reference theirs, and those must be preserved.
+    """
+    values = (spec.get("data") or {}).get("values")
+    if not isinstance(values, list) or not values:
+        return spec
+
+    internal = sorted(
+        {
+            key
+            for row in values
+            if isinstance(row, dict)
+            for key in row
+            if isinstance(key, str) and key.startswith(_INTERNAL_FIELD_PREFIX)
+        }
+    )
+    if not internal:
+        return spec
+
+    # What the spec looks like with the data rows removed: anything the pipeline
+    # still refers to (encodings, transforms, tooltips) shows up here. Matching is
+    # substring, not quoted-name, because references appear inside Vega
+    # expressions ("datum._last._label_y"). Over-matching keeps a field, which is
+    # the safe direction; under-matching would break the chart.
+    probe = json.loads(json.dumps(spec))
+    (probe.get("data") or {})["values"] = []
+    referenced = json.dumps(probe)
+
+    drop = {key for key in internal if key not in referenced}
+    if not drop:
+        return spec
+
+    stripped = json.loads(json.dumps(spec))
+    (stripped.get("data") or {})["values"] = [
+        {k: v for k, v in row.items() if k not in drop}
+        if isinstance(row, dict)
+        else row
+        for row in values
+    ]
+    return stripped
+
+
 @app.post("/api/viz-spec")
 async def get_viz_spec_endpoint(req: VizSpecRequest):
     from data360 import visualization as data360_viz
@@ -383,7 +435,8 @@ async def get_viz_spec_endpoint(req: VizSpecRequest):
         return JSONResponse(status_code=500, content={"error": "Vega-Lite spec was not generated."})
 
     return {k: v for k, v in {
-        "spec": spec,
+        # Internal helper columns are removed unless the spec references them.
+        "spec": _strip_unreferenced_internal_fields(spec),
         "reason": res.get("reason"),
         "strategy": res.get("strategy"),
     }.items() if v is not None}
