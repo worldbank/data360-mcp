@@ -19,6 +19,7 @@ import secrets
 import statistics
 import threading
 import time
+import urllib.parse
 from collections import Counter, defaultdict
 from concurrent.futures import (
     FIRST_COMPLETED,
@@ -137,6 +138,25 @@ def resolve_mcp_url(url: str | None) -> str:
         or os.environ.get("MCP_SERVER_URL")
         or DEFAULT_MCP_URL
     )
+
+
+def redacted_url(url: str) -> str:
+    """Return a loggable form of *url*: userinfo dropped, query values masked (CWE-532).
+
+    This script's stdout ends up in CI logs and its JSON report can be shared, so a
+    URL supplied by the operator must not be written out verbatim: an APIM endpoint
+    can carry a ``?subscription-key=`` value (or ``user:password@`` userinfo), and
+    even a bare URL discloses the environment it points at. Scheme, host and path —
+    what an operator needs in the log — are kept.
+    """
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    query = "&".join(
+        f"{name}=REDACTED" for name, _value in urllib.parse.parse_qsl(parts.query)
+    )
+    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, query, ""))
 
 
 def build_request_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -626,7 +646,7 @@ def main(  # noqa: PLR0913
     json_phases: list[dict[str, Any]] | None = [] if json_out else None
 
     report: dict[str, Any] = {
-        "mcp_url": mcp_url,
+        "mcp_url": redacted_url(mcp_url),
         "phase": phase,
         "config": {
             "retry_attempts": retry_attempts,
@@ -642,7 +662,7 @@ def main(  # noqa: PLR0913
         "phases": json_phases if json_phases is not None else [],
     }
 
-    print(f"MCP Server URL: {mcp_url}")
+    print(f"MCP Server URL: {redacted_url(mcp_url)}")
 
     if phase in ("all", "warmup"):
         warmup_results, warmup_duration = run_batch(
