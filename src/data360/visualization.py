@@ -42,6 +42,7 @@ from data360 import viz_config
 from data360.config import get_mcp_server_settings
 from data360.http_client import get_shared_httpx_client
 from data360.providers import get_database_mapping
+from data360.validation import validated_country_codes
 
 _logger = logging.getLogger(__name__)
 
@@ -1555,32 +1556,6 @@ def get_supported_chart_types() -> str:
 # ============================================================================
 
 
-_COUNTRY_CODE_RE = re.compile(r"[A-Z0-9]{2,4}")
-
-
-def _requested_country_codes(country_code: str | None) -> list[str]:
-    """Split a delimited country list and keep only well-formed codes (CWE-73).
-
-    Positive validation instead of blacklist-style character replacement: each
-    token must match an ISO-style code, and anything else is dropped rather than
-    carried into the result.
-    """
-    if not country_code:
-        return []
-    codes: list[str] = []
-    for token in re.split(r"[;,]", country_code):
-        code = token.strip().upper()
-        if not code:
-            continue
-        if _COUNTRY_CODE_RE.fullmatch(code):
-            codes.append(code)
-        else:
-            _logger.warning(
-                "Ignoring malformed country code from request: %s", repr(code)
-            )
-    return codes
-
-
 _MAX_LABEL_KEY = 64
 _MAX_LABEL_VALUE = 200
 
@@ -1612,7 +1587,7 @@ def _validated_series_labels(labels: object) -> dict[str, str]:
 
 async def _detect_missing_countries(country_code: str | None, present_countries: set[str]) -> list[str]:
     """Identify which of the requested country codes are missing from the returned set."""
-    requested_list = _requested_country_codes(country_code)
+    requested_list = validated_country_codes(country_code)
     if not requested_list:
         return []
     try:
