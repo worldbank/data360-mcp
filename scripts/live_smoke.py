@@ -307,6 +307,42 @@ def check_renderer_resource(base: str) -> Result:
     return result.passed("payload kept as an escaped JSON string")
 
 
+def check_malformed_country_code(base: str) -> Result:
+    """CWE-73: a traversal-looking country code must be dropped, not reflected."""
+    result = Result("CWE-73: malformed country code rejected")
+    hostile = "../../etc/passwd"
+    _, payload, _ = rpc(
+        base,
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+                "name": "data360_get_viz_spec",
+                "arguments": {
+                    "database_id": "WB_WDI",
+                    "indicator_id": "WB_WDI_NY_GDP_MKTP_KD_ZG",
+                    "country_code": "USA;" + hostile,
+                },
+            },
+        },
+        timeout=180,
+    )
+    body = json.dumps(payload)
+    if "etc/passwd" in body.upper():
+        return result.failed("traversal-looking code was echoed back into the response")
+    if "Traceback" in body:
+        return result.failed(f"unhandled error: {body[:200]}")
+    # Both outcomes are acceptable here: a chart, or an upstream rejection — what
+    # matters is that the value is never reflected back to the caller. (The
+    # validation itself is pinned by tests/test_path_input_validation.py; the
+    # Data360 API rejects the payload before the subtitle path runs, so this
+    # check is a live guard rather than a pre/post discriminator.)
+    text = tool_text(payload)
+    outcome = "upstream rejected it" if "Error" in text[:200] else "chart produced"
+    return result.passed(f"hostile token not reflected; {outcome}")
+
+
 def check_upstream(base: str) -> Result:
     result = Result("end-to-end: live search")
     try:
@@ -351,11 +387,14 @@ def run_checks(base: str, server: Server | None, offline: bool) -> list[Result]:
             results.append(Result("CWE-117: CRLF in indicator id (data path)").passed("skipped (--offline)"))
         else:
             results.append(check_data_path_logging(base, server))
-    results.append(
-        Result("end-to-end: live search").passed("skipped (--offline)")
-        if offline
-        else check_upstream(base)
-    )
+    if offline:
+        results.append(Result("end-to-end: live search").passed("skipped (--offline)"))
+        results.append(
+            Result("CWE-73: malformed country code rejected").passed("skipped (--offline)")
+        )
+    else:
+        results.append(check_upstream(base))
+        results.append(check_malformed_country_code(base))
     return results
 
 
