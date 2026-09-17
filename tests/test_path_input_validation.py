@@ -102,6 +102,61 @@ class TestCountryCodeBoundary:
                 country_code="../../etc/passwd",
             )
 
+    def test_ref_area_filter_is_validated_like_country_code(self):
+        """The filter path must not smuggle a malformed value past the argument check."""
+        from data360.api import _validate_user_filters
+
+        valid, errors = _validate_user_filters(
+            {"REF_AREA": "USA;../../etc/passwd", "SEX": "F"}, {}
+        )
+
+        assert valid.get("REF_AREA") == "USA"
+        assert valid.get("SEX") == "F"
+        assert errors == []
+
+    def test_ref_area_filter_with_no_usable_code_is_reported(self):
+        from data360.api import _validate_user_filters
+
+        valid, errors = _validate_user_filters({"REF_AREA": "../../etc/passwd"}, {})
+
+        assert "REF_AREA" not in valid
+        assert any("REF_AREA" in message for message in errors)
+
+    async def test_multi_indicator_path_validates_series_labels(self, monkeypatch):
+        """The multi-indicator pipeline reads series_labels too, so it must validate."""
+        from data360 import visualization
+
+        seen: dict = {}
+        real = visualization._validated_series_labels
+
+        def spy(labels):
+            seen["labels"] = labels
+            return real(labels)
+
+        monkeypatch.setattr(visualization, "_validated_series_labels", spy)
+
+        result = await visualization.get_multi_indicator_viz_spec(
+            indicator_ids=[{"database_id": "WB_WDI", "indicator_id": "X"}],
+            series_labels={"X": 42},
+        )
+
+        assert seen.get("labels") == {"X": 42}, "series_labels was not validated"
+        assert result.get("error"), "one indicator should be rejected before any fetch"
+
+    async def test_rank_countries_fails_closed_when_no_code_is_usable(self, httpx_mock):
+        """An all-malformed scope must not silently rank the global dataset."""
+        from data360.api import rank_countries
+
+        result = await rank_countries(
+            database_id="WB_WDI",
+            indicator_id="WB_WDI_NY_GDP_MKTP_KD_ZG",
+            country_codes="../../etc/passwd",
+        )
+
+        assert result.error is not None
+        assert "ISO-style country codes" in result.error
+        assert httpx_mock.get_requests() == [], "an upstream request was attempted"
+
     async def test_data_fetch_fails_closed_without_calling_upstream(self, httpx_mock):
         result = await get_data(
             database_id="WB_WDI",
@@ -252,6 +307,23 @@ class TestFmrVersionArgument:
     def test_rejects_anything_that_is_not_a_version(self, fmr_script, hostile):
         with pytest.raises(SystemExit):
             fmr_script.validated_version(hostile, "--hierarchy-version")
+
+
+class TestFmrScriptConfiguration:
+    def test_repo_root_is_absolute_so_containment_works_from_the_cli(self, fmr_script):
+        """`python scripts/build_ref_area_groups.py` leaves __file__ relative."""
+        assert fmr_script.REPO_ROOT.is_absolute()
+
+    def test_origin_defaults_to_fmr_and_is_configurable(self, fmr_script, monkeypatch):
+        assert fmr_script.allowed_fmr_origin() == "https://fmr.worldbank.org"
+
+        monkeypatch.setenv("FMR_ORIGIN", "https://fmr-mirror.internal")
+        assert fmr_script.allowed_fmr_origin() == "https://fmr-mirror.internal"
+
+        # the configured origin is what the guard accepts and refuses against
+        assert fmr_script.validated_fmr_url("https://fmr-mirror.internal/x")
+        with pytest.raises(ValueError, match="refusing to fetch outside"):
+            fmr_script.validated_fmr_url("https://fmr.worldbank.org/x")
 
 
 class TestFmrDestinationAllowList:

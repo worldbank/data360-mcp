@@ -2719,6 +2719,10 @@ async def get_multi_indicator_viz_spec(
         Dict with "url" (chart URL on success), "error" (on failure),
         "strategy" (which chart type was chosen), "warning" (if applicable).
     """
+    # Labels come from the caller; validate once here so every later read in this
+    # pipeline (indicator names, indicator_labels) uses only usable string entries.
+    series_labels = _validated_series_labels(series_labels)
+
     if indicator_ids is None or len(indicator_ids) < 2:
         return _err(
             "indicator_ids is required: pass a JSON array of 2–4 objects, each "

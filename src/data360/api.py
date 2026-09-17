@@ -478,9 +478,19 @@ def _validate_user_filters(
         if isinstance(val, str) and not val.strip():
             continue
 
-        # Align with country_code convention: semicolons in REF_AREA become commas for the Data API.
-        if dim == "REF_AREA" and isinstance(val, str) and ";" in val:
-            val = ",".join(p.strip() for p in val.split(";") if p.strip())
+        # REF_AREA arrives as a delimited code list, so it gets the same positive
+        # validation as the dedicated country_code argument: a malformed value must
+        # not reach the request (semicolons are the tool-side separator, commas the
+        # API's). Anything unusable is reported instead of silently dropped.
+        if dim == "REF_AREA" and isinstance(val, str):
+            codes = validated_country_codes(val)
+            if not codes:
+                errors.append(
+                    "REF_AREA filter must contain ISO-style country codes "
+                    "(letters or digits), separated by ',' or ';'."
+                )
+                continue
+            val = ",".join(codes)
 
         # If dimension exists in metadata, check value
         if dim in available_disaggregations:
@@ -3284,6 +3294,15 @@ async def rank_countries(
     resolved_codes: list[str] = []
     if country_codes:
         resolved_codes = validated_country_codes(country_codes)
+        if not resolved_codes:
+            # Falling through with an empty list would join to country_code="" which
+            # reads as "no scope" and ranks the global dataset instead.
+            return RankingResponse(
+                error=(
+                    "country_codes must contain ISO-style country codes "
+                    "(letters or digits), separated by ',' or ';'."
+                )
+            )
         universe = "explicit"
     elif country_group:
         # Gate on is_group() before attempting expansion — this prevents silent

@@ -218,10 +218,12 @@ def test_blocked_call_envelope_is_escaped_and_nosniff(server: Server) -> None:
         },
     )
 
-    body = json.dumps(payload)
     assert status == HTTP_FORBIDDEN
-    assert XSS_PAYLOAD not in body
-    assert "&lt;" in body
+    # The id is echoed verbatim (JSON-RPC correlation); the reflected message is escaped.
+    assert payload["id"] == XSS_PAYLOAD
+    message = payload["error"]["message"]
+    assert XSS_PAYLOAD not in message, message
+    assert "&lt;" in message, message
     assert headers.get("x-content-type-options") == NOSNIFF
 
 

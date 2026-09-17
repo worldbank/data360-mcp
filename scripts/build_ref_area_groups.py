@@ -38,6 +38,7 @@ Excluded:
 
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.parse
@@ -51,11 +52,20 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from data360.providers import GroupHierarchyManager  # noqa: E402
 
-REPO_ROOT = _REPO_ROOT
+# Resolved: the script is documented to run as `python scripts/build_ref_area_groups.py`,
+# where __file__ is relative — the containment check below compares against an
+# absolute resolved path, so the root must be absolute too.
+REPO_ROOT = _REPO_ROOT.resolve()
+
 # The only origin this script is allowed to fetch from. Pinning it is what stops a
-# caller-supplied URL from pointing the request at an internal address, a
-# file:// path, or any other host (CWE-918).
-FMR_ORIGIN = "https://fmr.worldbank.org"
+# caller-supplied URL from pointing the request at an internal address, a file://
+# path, or any other host (CWE-918). Configurable, defaulting to the public FMR host.
+DEFAULT_FMR_ORIGIN = "https://fmr.worldbank.org"
+
+
+def allowed_fmr_origin() -> str:
+    """Origin permitted for the FMR fetch: ``FMR_ORIGIN`` env var, else the default."""
+    return os.environ.get("FMR_ORIGIN", DEFAULT_FMR_ORIGIN)
 HIERARCHY_FILE = REPO_ROOT / "examples" / "H_AREA_GROUPS38.json"
 CODELIST_FILE = REPO_ROOT / "examples" / "CL_REF_GROUPINGS.json"
 OUTPUT_FILE = REPO_ROOT / "src" / "data360" / "ref_area_groups.json"
@@ -68,10 +78,11 @@ def validated_fmr_url(url: str) -> str:
     this check an arbitrary URL (``file:///etc/passwd``, a cloud metadata
     endpoint, an internal host) would be fetched server-side.
     """
+    origin = allowed_fmr_origin()
     parsed = urllib.parse.urlparse(url)
-    expected = urllib.parse.urlparse(FMR_ORIGIN)
+    expected = urllib.parse.urlparse(origin)
     if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
-        raise ValueError(f"refusing to fetch outside {FMR_ORIGIN}: {url!r}")
+        raise ValueError(f"refusing to fetch outside {origin}: {url!r}")
     return url
 
 
