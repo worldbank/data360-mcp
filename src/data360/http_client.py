@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import threading
 import time
 from dataclasses import dataclass
@@ -39,6 +38,7 @@ from dataclasses import dataclass
 import httpx
 
 from .config import Data360Settings, get_data360_settings
+from .entropy import uniform_jitter
 
 _logger = logging.getLogger(__name__)
 
@@ -107,8 +107,9 @@ class _RetryingTransport(httpx.AsyncHTTPTransport):
         policy = self._policy
         delay = min(policy.backoff_max, policy.backoff_base * (2 ** (attempt - 1)))
         # Equal jitter keeps clients from retrying in lockstep without giving up
-        # the exponential growth between consecutive delays.
-        delay = random.uniform(delay / 2, delay)
+        # the exponential growth between consecutive delays. Drawn from the OS
+        # CSPRNG (see data360.entropy) to satisfy the CWE-331 policy.
+        delay = uniform_jitter(delay / 2, delay)
         if reason is None:
             detail = "retryable status"
         else:

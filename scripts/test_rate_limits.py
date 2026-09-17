@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import os
-import random
+import secrets
 import statistics
 import threading
 import time
@@ -33,6 +33,8 @@ from typing import Any, Literal
 
 import requests
 import typer
+
+from data360.entropy import uniform_jitter
 
 # ── Defaults ───────────────────────────────────────────────────
 DEFAULT_MCP_URL = "https://azapimqa.worldbank.org/public/data360/mcp"
@@ -327,7 +329,7 @@ def request_with_retry(
             retryable.add("rate_limited")
 
         if attempt < cfg.retry_attempts and category in retryable:
-            sleep_s = cfg.backoff_base * (2**attempt) + random.uniform(0, 0.2)
+            sleep_s = cfg.backoff_base * (2**attempt) + uniform_jitter(0, 0.2)
             time.sleep(sleep_s)
         else:
             return result
@@ -348,7 +350,7 @@ def run_batch(
     start_batch = time.perf_counter()
 
     def worker(i: int) -> dict[str, Any]:
-        case = random.choice(LOAD_TEST_CASES) if mix_cases else LOAD_TEST_CASES[0]
+        case = secrets.choice(LOAD_TEST_CASES) if mix_cases else LOAD_TEST_CASES[0]
         session = get_session()
         return request_with_retry(session, case, i + 1, cfg)
 
@@ -492,7 +494,7 @@ def soak_test(
         req_id = 1
 
         while len(futures) < concurrency and time.time() < deadline:
-            case = random.choice(LOAD_TEST_CASES)
+            case = secrets.choice(LOAD_TEST_CASES)
             futures.add(
                 executor.submit(
                     _soak_once,
@@ -511,7 +513,7 @@ def soak_test(
                 all_results.append(f.result())
 
                 if time.time() < deadline:
-                    case = random.choice(LOAD_TEST_CASES)
+                    case = secrets.choice(LOAD_TEST_CASES)
                     futures.add(
                         executor.submit(
                             _soak_once,
