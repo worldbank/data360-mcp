@@ -333,17 +333,28 @@ def check_malformed_country_code(base: str) -> Result:
         return result.failed("traversal-looking code was echoed back into the response")
     if "Traceback" in body:
         return result.failed(f"unhandled error: {body[:200]}")
-    # Both outcomes are acceptable here: a chart, or an upstream rejection — what
-    # matters is that the value is never reflected back to the caller. (The
-    # validation itself is pinned by tests/test_path_input_validation.py; the
-    # Data360 API rejects the payload before the subtitle path runs, so this
-    # check is a live guard rather than a pre/post discriminator.)
+    # The malformed token must be dropped before the request is built, so the
+    # chart is produced for the valid code instead of the upstream rejecting the
+    # whole call (which is what happened before the validation existed).
     text = tool_text(payload)
-    outcome = "upstream rejected it" if "Error" in text[:200] else "chart produced"
-    return result.passed(f"hostile token not reflected; {outcome}")
+    if "Error" in text[:200]:
+        return result.failed(f"request failed instead of dropping the token: {text[:200]}")
+    return result.passed("hostile token dropped; chart produced for the valid code")
 
 
-def check_upstream(base: str) -> Result:
+def check_upstream(base: str, attempts: int = 2) -> Result:
+    """The Data360 API occasionally answers slowly; one retry keeps the gate stable."""
+    result = Result("end-to-end: live search")
+    for attempt in range(1, attempts + 1):
+        outcome = _search_once(base)
+        if outcome.ok:
+            if attempt > 1:
+                outcome.detail += f" (passed on attempt {attempt})"
+            return outcome
+    return outcome
+
+
+def _search_once(base: str) -> Result:
     result = Result("end-to-end: live search")
     try:
         _, payload, _ = rpc(

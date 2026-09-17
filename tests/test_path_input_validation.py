@@ -14,14 +14,16 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 import pytest
 
+from data360.api import get_data, get_data_api_url
+from data360.validation import validated_country_codes
 from data360.visualization import (
     _detect_missing_countries,
-    _requested_country_codes,
     _validated_series_labels,
     get_viz_spec,
 )
@@ -32,22 +34,22 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 INVALID_LABEL = 42
 
 
-class TestRequestedCountryCodes:
+class TestValidatedCountryCodes:
     def test_splits_on_either_delimiter_and_normalises_case(self):
-        assert _requested_country_codes(" usa;  ind; pak ") == ["USA", "IND", "PAK"]
-        assert _requested_country_codes("USA,IND") == ["USA", "IND"]
-        assert _requested_country_codes("USA, ind;PAK") == ["USA", "IND", "PAK"]
+        assert validated_country_codes(" usa;  ind; pak ") == ["USA", "IND", "PAK"]
+        assert validated_country_codes("USA,IND") == ["USA", "IND"]
+        assert validated_country_codes("USA, ind;PAK") == ["USA", "IND", "PAK"]
 
     def test_traversal_and_markup_tokens_are_dropped(self):
-        assert _requested_country_codes("USA;../../etc/passwd") == ["USA"]
-        assert _requested_country_codes("../../etc/passwd") == []
-        assert _requested_country_codes("<script>alert(1)</script>") == []
-        assert _requested_country_codes("USA;<img src=x>") == ["USA"]
+        assert validated_country_codes("USA;../../etc/passwd") == ["USA"]
+        assert validated_country_codes("../../etc/passwd") == []
+        assert validated_country_codes("<script>alert(1)</script>") == []
+        assert validated_country_codes("USA;<img src=x>") == ["USA"]
 
     def test_empty_input(self):
-        assert _requested_country_codes(None) == []
-        assert _requested_country_codes("") == []
-        assert _requested_country_codes(" ; , ") == []
+        assert validated_country_codes(None) == []
+        assert validated_country_codes("") == []
+        assert validated_country_codes(" ; , ") == []
 
 
 class TestDetectMissingCountries:
@@ -63,6 +65,47 @@ class TestDetectMissingCountries:
             )
 
         assert missing == []
+
+
+class TestCountryCodeBoundary:
+    """The six request-parameter sites must never forward a malformed value."""
+
+    @pytest.fixture
+    def stub_metadata(self):
+        """get_data_api_url consults metadata; keep the test offline."""
+        stub = SimpleNamespace(indicator_metadata={}, disaggregation_options=[], error=None)
+        with patch("data360.api.get_metadata", new_callable=AsyncMock, return_value=stub):
+            yield
+
+    async def test_url_builder_keeps_only_valid_codes(self, stub_metadata):
+        url = await get_data_api_url(
+            database_id="WB_WDI",
+            indicator_id="WB_WDI_NY_GDP_MKTP_KD_ZG",
+            country_code="USA;../../etc/passwd",
+        )
+
+        assert "REF_AREA=USA" in url
+        assert "passwd" not in url
+        assert ".." not in url
+
+    async def test_url_builder_rejects_input_with_no_valid_code(self, stub_metadata):
+        with pytest.raises(ValueError, match="ISO-style country codes"):
+            await get_data_api_url(
+                database_id="WB_WDI",
+                indicator_id="WB_WDI_NY_GDP_MKTP_KD_ZG",
+                country_code="../../etc/passwd",
+            )
+
+    async def test_data_fetch_fails_closed_without_calling_upstream(self, httpx_mock):
+        result = await get_data(
+            database_id="WB_WDI",
+            indicator_id="WB_WDI_NY_GDP_MKTP_KD_ZG",
+            country_code="../../etc/passwd",
+        )
+
+        assert result.error is not None
+        assert "ISO-style country codes" in result.error
+        assert httpx_mock.get_requests() == []
 
 
 class TestSeriesLabelValidation:

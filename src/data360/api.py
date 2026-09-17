@@ -54,6 +54,7 @@ from .models import (
     SeriesDescription,
 )
 from .providers import get_database_mapping
+from .validation import validated_country_codes
 
 dotenv.load_dotenv()
 _logger = logging.getLogger(__name__)
@@ -2205,8 +2206,13 @@ async def get_data(
 
     # Convert semicolon-separated list into comma-separated list for Data API
     if country_code:
+        codes = validated_country_codes(country_code)
+        if not codes:
+            return IndicatorDataResponse(
+                error="country_code must contain ISO-style country codes (letters or digits)."
+            )
         # Takes precedence over REF_AREA in disaggregation_filters
-        params["REF_AREA"] = country_code.replace(";", ",")
+        params["REF_AREA"] = ",".join(codes)
 
     # Fetch metadata and disaggregations FIRST to inform parameter building
     # This ensures we don't apply invalid defaults (like AGE=_T) which cause empty results
@@ -2504,7 +2510,12 @@ async def get_data_api_url(
 
     if country_code:
         # Same as get_data(): Data API expects comma-separated REF_AREA; allow semicolons in tool args.
-        params["REF_AREA"] = country_code.replace(";", ",")
+        codes = validated_country_codes(country_code)
+        if not codes:
+            raise ValueError(
+                "country_code must contain ISO-style country codes (letters or digits)."
+            )
+        params["REF_AREA"] = ",".join(codes)
 
     if start_year:
         params["timePeriodFrom"] = start_year
@@ -2559,8 +2570,8 @@ async def get_data_api_url(
     if country_code:
         # Increase limit based on number of countries requested (max ~60 years per country)
         # Using 1000 as a safe multiplier to cover most time series data including higher frequency
-        ref_area_param = country_code.replace(";", ",")
-        n_countries = max(1, len([p for p in ref_area_param.split(",") if p.strip()]))
+        codes = validated_country_codes(country_code)
+        n_countries = max(1, len(codes))
         limit = max(1000, n_countries * 1000)
 
     params["top"] = limit
@@ -3051,7 +3062,8 @@ async def summarize_data(
     # the silent data loss that occurred when the API defaulted to _T only.
     sample_country: str | None = None
     if country_code:
-        sample_country = country_code.replace(";", ",").split(",")[0].strip() or None
+        codes = validated_country_codes(country_code)
+        sample_country = codes[0] if codes else None
 
     effective_filters, auto_expanded_dims = await _auto_detect_disagg_dimensions(
         database_id=database_id,
@@ -3271,9 +3283,7 @@ async def rank_countries(
     # Resolve country codes (explicit scope wins over rank_universe)
     resolved_codes: list[str] = []
     if country_codes:
-        resolved_codes = [
-            c.strip() for c in country_codes.replace(";", ",").split(",") if c.strip()
-        ]
+        resolved_codes = validated_country_codes(country_codes)
         universe = "explicit"
     elif country_group:
         # Gate on is_group() before attempting expansion — this prevents silent
@@ -3551,7 +3561,7 @@ async def compare_countries(
             error: Error message if request failed; otherwise None.
                 Falls back to data360_get_data if this tool encounters an error.
     """
-    codes = [c.strip() for c in country_codes.replace(";", ",").split(",") if c.strip()]
+    codes = validated_country_codes(country_codes)
     if len(codes) < 2:
         return CountryComparisonResponse(
             error="At least 2 country codes required for comparison."
