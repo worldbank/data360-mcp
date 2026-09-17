@@ -20,7 +20,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 REPORTED_FILES = (
     "src/data360/http_client.py",
     "src/data360/providers.py",
-    "scripts/test_rate_limits.py",
+    "tests/test_rate_limits.py",
 )
 
 

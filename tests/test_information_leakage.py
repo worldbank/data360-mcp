@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEMO_PAGE = REPO_ROOT / "static" / "index.html"
-RATE_LIMIT_SCRIPT = REPO_ROOT / "scripts" / "test_rate_limits.py"
+RATE_LIMIT_SCRIPT = REPO_ROOT / "tests" / "test_rate_limits.py"
 
 BACKEND_DETAIL = "Indicator 'WB_SECRET_IDNO' not found: HTTP 404 {'trace': 'backend-internal'}"
 GENERIC_MESSAGE = "Visualization could not be generated for this request."
@@ -90,7 +90,7 @@ class TestRateLimitScriptLogging:
 
     @pytest.fixture(scope="module")
     def script(self):
-        # Loaded by path (scripts/ is not a package); register before exec because the
+        # Loaded by path (it is a standalone CLI, not a pytest module); register before
         # module uses dataclasses.
         module_spec = importlib.util.spec_from_file_location(
             "rate_limits_under_test", RATE_LIMIT_SCRIPT

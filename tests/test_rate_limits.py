@@ -8,7 +8,7 @@ Environment:
   APIM_SUBSCRIPTION_KEY — if set, sent as Ocp-Apim-Subscription-Key (Azure API Management).
 
 Example:
-  uv run python scripts/test_rate_limits.py --phase all --url https://example/mcp
+  uv run python tests/test_rate_limits.py --phase all --url https://example/mcp
 """
 
 from __future__ import annotations
