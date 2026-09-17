@@ -9,6 +9,7 @@ from datetime import datetime
 
 from fastmcp.apps import AppConfig, ResourceCSP
 from data360.providers import get_database_mapping
+from data360.response_safety import escape_text
 
 from ._server_definition import mcp
 from .agent_recipe import AGENT_RECIPE_MARKDOWN
@@ -363,13 +364,31 @@ from data360.templates.render import render_template
     ),
 )
 async def vega_lite_renderer(spec: str | None = None) -> str:
-    """HTML renderer template for Vega-Lite v6 charts."""
+    """HTML renderer template for Vega-Lite v6 charts.
+
+    ``spec`` comes from the resource URI, so it is untrusted input (CWE-80): it
+    is only embedded after being parsed as JSON and is written into the page with
+    ``|tojson``, so it can never break out of the surrounding ``<script>``. Any
+    value that is not a JSON document is dropped rather than reflected.
+    """
     from data360.config import get_mcp_server_settings
 
     settings = get_mcp_server_settings()
     port = settings.port or 8021
     server_base = getattr(settings, "server_base_url", None) or f"http://localhost:{port}"
-    return render_template("vega_lite_renderer.jinja2", server_base=server_base, pre_loaded_spec=spec)
+
+    pre_loaded_spec: object | None = None
+    if spec:
+        try:
+            pre_loaded_spec = json.loads(spec)
+        except ValueError:
+            pre_loaded_spec = None
+
+    return render_template(
+        "vega_lite_renderer.jinja2",
+        server_base=server_base,
+        pre_loaded_spec=pre_loaded_spec,
+    )
 
 
 @mcp.resource(
@@ -465,7 +484,7 @@ async def debug_log(request: Request) -> Response:
     except Exception as e:
         print(f"Error reading debug log: {repr(e)}", flush=True)
         return JSONResponse(
-            {"error": str(e)},
+            {"error": escape_text(e)},
             status_code=400,
             headers={"Access-Control-Allow-Origin": "*"}
         )
