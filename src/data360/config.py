@@ -12,6 +12,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from data360.log_sanitize import install_crlf_sanitizer
+
 # Skip .env during pytest (collection and execution) so tests control DATA360_* URLs.
 if not _os.environ.get("PYTEST_CURRENT_TEST") and not _os.environ.get("PYTEST_RUNNING"):
     load_dotenv()
@@ -176,6 +178,10 @@ def setup_logging(
         fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+    # CWE-117: neutralize CR/LF in every log record process-wide so untrusted
+    # request/upstream data can never forge log lines (console, file, Azure).
+    install_crlf_sanitizer()
 
     # Get root logger
     root_logger = logging.getLogger()

@@ -8,6 +8,7 @@ import json
 from datetime import datetime
 
 from fastmcp.apps import AppConfig, ResourceCSP
+from data360.log_sanitize import sanitize_for_log
 from data360.providers import get_database_mapping
 
 from ._server_definition import mcp
@@ -457,7 +458,7 @@ async def debug_log(request: Request) -> Response:
 
     try:
         body = await request.json()
-        print(f"\n[IFRAME DEBUG LOG] {body}\n", flush=True)
+        print(f"\n[IFRAME DEBUG LOG] {sanitize_for_log(body)}\n", flush=True)
         return JSONResponse(
             {"status": "ok"},
             headers={"Access-Control-Allow-Origin": "*"}
