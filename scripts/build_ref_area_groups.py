@@ -38,6 +38,7 @@ Excluded:
 
 import argparse
 import json
+import re
 import sys
 import urllib.request
 from datetime import UTC, datetime
@@ -56,7 +57,15 @@ OUTPUT_FILE = REPO_ROOT / "src" / "data360" / "ref_area_groups.json"
 
 
 def fetch_fmr_data(url: str, output_path: Path) -> None:
-    """Download JSON from FMR and save it to output_path."""
+    """Download JSON from FMR and save it to output_path.
+
+    ``output_path`` is refused unless it stays inside the repository: the write
+    target must never be steerable outside the checkout (CWE-73).
+    """
+    resolved = output_path.resolve()
+    if not resolved.is_relative_to(REPO_ROOT):
+        raise ValueError(f"refusing to write outside the repository: {resolved}")
+
     print(f"Fetching from {url} ...")
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
@@ -70,6 +79,27 @@ def fetch_fmr_data(url: str, output_path: Path) -> None:
         print(f"  Error fetching {url}: {e}")
         print("  Note: FMR requires VPN access. If you are not on the VPN, this will fail.")
         raise
+
+
+_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,3}")
+
+
+def validated_version(raw: str, flag: str) -> str:
+    """Return an FMR version only if it matches ``<digits>[.<digits>]`` (CWE-73).
+
+    The value is concatenated into the FMR URL passed to ``urlopen``, so anything
+    that is not a plain version number would let the caller redirect that request
+    (extra path segments, or a scheme/host of their choosing). Reject it instead
+    of trying to strip characters out of it.
+    """
+    value = raw.strip()
+    if not value:
+        return ""
+    if not _VERSION_RE.fullmatch(value):
+        raise SystemExit(
+            f"{flag} must be a version like '38.0' (digits and dots only), got {value!r}"
+        )
+    return value
 
 
 def build(hierarchy_path: Path, codelist_path: Path, output_path: Path) -> None:
@@ -145,18 +175,21 @@ def main():
     args = parser.parse_args()
 
     if args.fetch:
+        hierarchy_version = validated_version(args.hierarchy_version, "--hierarchy-version")
+        codelist_version = validated_version(args.codelist_version, "--codelist-version")
+
         hierarchy_url = (
             "https://fmr.worldbank.org/FMR/sdmx/v2/structure/hierarchy/WB/H_REF_AREA_GROUPS/"
         )
-        if args.hierarchy_version:
-            hierarchy_url += args.hierarchy_version
+        if hierarchy_version:
+            hierarchy_url += hierarchy_version
         hierarchy_url += "?format=sdmx-json"
 
         codelist_url = (
             "https://fmr.worldbank.org/FMR/sdmx/v2/structure/codelist/WB/CL_REF_GROUPINGS/"
         )
-        if args.codelist_version:
-            codelist_url += args.codelist_version
+        if codelist_version:
+            codelist_url += codelist_version
         codelist_url += "?format=sdmx-json"
 
         print("--- Fetching source data from FMR ---")

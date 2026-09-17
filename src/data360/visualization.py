@@ -1555,11 +1555,64 @@ def get_supported_chart_types() -> str:
 # ============================================================================
 
 
-async def _detect_missing_countries(country_code: str | None, present_countries: set[str]) -> list[str]:
-    """Identify which of the requested country codes are missing from the returned set."""
+_COUNTRY_CODE_RE = re.compile(r"[A-Z0-9]{2,4}")
+
+
+def _requested_country_codes(country_code: str | None) -> list[str]:
+    """Split a delimited country list and keep only well-formed codes (CWE-73).
+
+    Positive validation instead of blacklist-style character replacement: each
+    token must match an ISO-style code, and anything else is dropped rather than
+    carried into the result.
+    """
     if not country_code:
         return []
-    requested_list = [c.strip().upper() for c in country_code.replace(";", ",").split(",") if c.strip()]
+    codes: list[str] = []
+    for token in re.split(r"[;,]", country_code):
+        code = token.strip().upper()
+        if not code:
+            continue
+        if _COUNTRY_CODE_RE.fullmatch(code):
+            codes.append(code)
+        else:
+            _logger.warning(
+                "Ignoring malformed country code from request: %s", repr(code)
+            )
+    return codes
+
+
+_MAX_LABEL_KEY = 64
+_MAX_LABEL_VALUE = 200
+
+
+def _validated_series_labels(labels: object) -> dict[str, str]:
+    """Keep only usable label overrides supplied by the caller (CWE-73).
+
+    The mapping comes straight from the tool call, so accept strings only and cap
+    their length — anything else is dropped rather than normalised, and the
+    result is what gets applied to the chart data.
+    """
+    if not isinstance(labels, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for key, value in labels.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        code, label = key.strip(), value.strip()
+        if (
+            not code
+            or not label
+            or len(code) > _MAX_LABEL_KEY
+            or len(label) > _MAX_LABEL_VALUE
+        ):
+            continue
+        cleaned[code] = label
+    return cleaned
+
+
+async def _detect_missing_countries(country_code: str | None, present_countries: set[str]) -> list[str]:
+    """Identify which of the requested country codes are missing from the returned set."""
+    requested_list = _requested_country_codes(country_code)
     if not requested_list:
         return []
     try:
@@ -2198,10 +2251,15 @@ async def get_viz_spec(
 
     # 6.5 Apply custom series labels (override auto-resolved labels).
     # series_labels is now optional — the pipeline auto-resolves the dimensions above.
-    if series_labels and isinstance(series_labels, dict):
+    validated_labels = _validated_series_labels(series_labels)
+    if validated_labels:
         for col in _VIZ_DISAGG_DIMS:
             if col in viz_data.columns:
-                viz_data[col] = viz_data[col].replace(series_labels)
+                # Explicit key lookup instead of Series.replace: only the codes the
+                # caller supplied are relabelled, everything else passes through.
+                viz_data[col] = viz_data[col].map(
+                    lambda value, mapping=validated_labels: mapping.get(value, value)
+                )
 
     # 6.5b Pre-filter for confidence interval error bands if present
     from data360.viz_config import _filter_df_for_error_band
