@@ -89,8 +89,9 @@ help = "Run tests"
 cmd = "pytest"
 
 [tool.poe.tasks.live-smoke]
-help = "Boot the server locally and run the live security + end-to-end checks (scripts/live_smoke.py)"
-cmd = "uv run python scripts/live_smoke.py"
+help = "Boot the server locally and run the live security + end-to-end checks (tests/test_live_smoke.py)"
+cmd = "uv run pytest tests/test_live_smoke.py -m live"
+env = { DATA360_LIVE_SMOKE = "1" }
 
 [tool.poe.tasks.test-cov]
 help = "Run tests with coverage"
@@ -105,5 +106,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+  "live: drives a real, locally booted MCP server (off by default; run `uv run poe live-smoke`)",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
