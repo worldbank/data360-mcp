@@ -46,7 +46,9 @@
   <body>
     {% if pre_loaded_spec %}
     <script>
-      window.PRE_LOADED_SPEC = {{ pre_loaded_spec | safe }};
+      {# `tojson` escapes <, >, & and quotes, so the parsed spec cannot break out
+         of this script block even though it comes from the request URI. #}
+      window.PRE_LOADED_SPEC = {{ pre_loaded_spec | tojson }};
     </script>
     {% endif %}
     <div id="vis"></div>
@@ -56,7 +58,7 @@
       <pre id="error-stack"></pre>
     </div>
     <script type="module">
-      const serverBaseUrl = "{{ server_base }}" || window.location.origin;
+      const serverBaseUrl = {{ server_base | tojson }} || window.location.origin;
 
       function showError(message, stack) {
         document.getElementById('vis').style.display = 'none';
@@ -108,7 +110,10 @@
 
         app.ontoolresult = async (result) => {
           if (result.isError) {
-            document.getElementById('vis').innerHTML = `<p style="color:red;">Error: ${result.content || "Failed to render chart"}</p>`;
+            const errorEl = document.createElement('p');
+            errorEl.style.color = 'red';
+            errorEl.textContent = `Error: ${result.content || "Failed to render chart"}`;
+            document.getElementById('vis').replaceChildren(errorEl);
             return;
           }
 
@@ -149,16 +154,21 @@
               showError(`Failed to render chart spec: ${err.message}`, err.stack);
             });
           } else {
-            document.getElementById('vis').innerHTML = `
-              <div>
-                <p>No visualization spec available.</p>
-                <pre style="white-space: pre-wrap; font-size: 11px; background: #fee; padding: 8px; border: 1px solid #fcc; font-family: monospace;">
-Result Keys: ${result ? Object.keys(result).join(', ') : 'null'}
-Fetch Error: ${fetchError || 'none'}
-Result JSON: ${result ? JSON.stringify(result, null, 2) : 'null'}
-                </pre>
-              </div>
-            `;
+            // Built through DOM APIs: `result` carries tool output, so it must
+            // never be interpolated into HTML.
+            const wrapper = document.createElement('div');
+            const heading = document.createElement('p');
+            heading.textContent = 'No visualization spec available.';
+            const detail = document.createElement('pre');
+            detail.style.cssText =
+              'white-space: pre-wrap; font-size: 11px; background: #fee; padding: 8px; border: 1px solid #fcc; font-family: monospace;';
+            detail.textContent = [
+              `Result Keys: ${result ? Object.keys(result).join(', ') : 'null'}`,
+              `Fetch Error: ${fetchError || 'none'}`,
+              `Result JSON: ${result ? JSON.stringify(result, null, 2) : 'null'}`,
+            ].join('\n');
+            wrapper.append(heading, detail);
+            document.getElementById('vis').replaceChildren(wrapper);
           }
         };
 

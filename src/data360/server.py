@@ -23,6 +23,11 @@ from data360.otel_setup import (
     configure_open_telemetry_for_server,
     instrument_httpx_outbound,
 )
+from data360.response_safety import (
+    escape_jsonrpc_id,
+    escape_text,
+    install_response_hardening,
+)
 
 _audit_logger = logging.getLogger("audit")
 _telemetry_client = None
@@ -141,8 +146,13 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                         status_code=403,
                         content={
                             "jsonrpc": "2.0",
-                            "id": body.get("id"),
-                            "error": {"code": -32001, "message": error_msg},
+                            "id": escape_jsonrpc_id(body.get("id")),
+                            # `error_msg` embeds the offending tool name/parameter,
+                            # so it is request-derived: escape before reflecting.
+                            "error": {
+                                "code": -32001,
+                                "message": escape_text(error_msg),
+                            },
                         },
                     )
 
@@ -158,8 +168,11 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                             status_code=403,
                             content={
                                 "jsonrpc": "2.0",
-                                "id": body.get("id"),
-                                "error": {"code": -32001, "message": error_msg},
+                                "id": escape_jsonrpc_id(body.get("id")),
+                                "error": {
+                                    "code": -32001,
+                                    "message": escape_text(error_msg),
+                                },
                             },
                         )
 
@@ -284,6 +297,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Stop browsers rendering JSON responses as HTML (defence in depth for the
+# reflected values escaped in the middleware/endpoints below).
+install_response_hardening(app)
+
 # Instrument FastAPI for incoming request tracking
 if mcp_settings.env != "local" and _connection_string:
     try:
@@ -347,7 +364,10 @@ async def get_viz_spec_endpoint(req: VizSpecRequest):
         return JSONResponse(status_code=500, content={"error": "Failed to generate visualization spec due to an internal error."})
 
     if res.get("error"):
-        return JSONResponse(status_code=400, content={"error": res.get("error")})
+        # Spec generation errors can quote the requested indicator/database ids.
+        return JSONResponse(
+            status_code=400, content={"error": escape_text(res.get("error"))}
+        )
 
     spec = res.get("spec")
     if not spec:

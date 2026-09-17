@@ -138,13 +138,22 @@
           mcpApp.reportSize();
         }).catch(err => {
           console.error(err);
-          visDiv.innerHTML = `<p style="color:red;">Failed to render chart spec: ${err.message}</p>`;
+          showChartError(`Failed to render chart spec: ${err.message}`);
           mcpApp.reportSize();
         });
       } catch (e) {
-        visDiv.innerHTML = `<p style="color:red;">Error preparing spec: ${e.message}</p>`;
+        showChartError(`Error preparing spec: ${e.message}`);
         mcpApp.reportSize();
       }
+    }
+
+    // Renderer errors can quote spec values, so they are set as text rather than
+    // interpolated into HTML.
+    function showChartError(message) {
+      const el = document.createElement('p');
+      el.style.color = 'red';
+      el.textContent = message;
+      visDiv.replaceChildren(el);
     }
 
     window.addEventListener('load', () => {
