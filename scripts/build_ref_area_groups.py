@@ -38,7 +38,9 @@ Excluded:
 
 import argparse
 import json
+import re
 import sys
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -54,9 +56,33 @@ HIERARCHY_FILE = REPO_ROOT / "examples" / "H_AREA_GROUPS38.json"
 CODELIST_FILE = REPO_ROOT / "examples" / "CL_REF_GROUPINGS.json"
 OUTPUT_FILE = REPO_ROOT / "src" / "data360" / "ref_area_groups.json"
 
+# CWE-73/918: FMR versions come from CLI args and are concatenated into the
+# request URL, so they must match a strict positive pattern. The host is
+# pinned — only the official FMR endpoint is ever fetched.
+_FMR_VERSION_RE = re.compile(r"^\d+(\.\d+)?$")
+_FMR_ALLOWED_HOST = "fmr.worldbank.org"
+
+
+def validate_fmr_version(value: str, name: str) -> str:
+    """Return ``value`` if it is a plain numeric FMR version, else raise."""
+    if not _FMR_VERSION_RE.match(value or ""):
+        raise ValueError(
+            f"Invalid {name} {value!r}: expected a numeric version like '38.0'."
+        )
+    return value
+
+
+def validate_fmr_url(url: str) -> str:
+    """Return ``url`` if it targets the official FMR host over HTTPS, else raise."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname != _FMR_ALLOWED_HOST:
+        raise ValueError(f"Refusing to fetch non-FMR URL: {url!r}.")
+    return url
+
 
 def fetch_fmr_data(url: str, output_path: Path) -> None:
     """Download JSON from FMR and save it to output_path."""
+    validate_fmr_url(url)
     print(f"Fetching from {url} ...")
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
@@ -149,14 +175,18 @@ def main():
             "https://fmr.worldbank.org/FMR/sdmx/v2/structure/hierarchy/WB/H_REF_AREA_GROUPS/"
         )
         if args.hierarchy_version:
-            hierarchy_url += args.hierarchy_version
+            hierarchy_url += validate_fmr_version(
+                args.hierarchy_version, "hierarchy version"
+            )
         hierarchy_url += "?format=sdmx-json"
 
         codelist_url = (
             "https://fmr.worldbank.org/FMR/sdmx/v2/structure/codelist/WB/CL_REF_GROUPINGS/"
         )
         if args.codelist_version:
-            codelist_url += args.codelist_version
+            codelist_url += validate_fmr_version(
+                args.codelist_version, "codelist version"
+            )
         codelist_url += "?format=sdmx-json"
 
         print("--- Fetching source data from FMR ---")

@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import uuid
 
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from data360.mcp_server.resources import CORSStaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
@@ -304,6 +305,12 @@ async def root():
 
 
 
+# CWE-73/80: positive charset for viz identifier fields at the HTTP
+# boundary — traversal sequences (../) and markup (<script>) are rejected
+# with 422 before reaching the pipeline or error strings.
+_VIZ_ID_RE = r"[A-Za-z0-9_.][A-Za-z0-9_.\-]*"
+
+
 class VizSpecRequest(BaseModel):
     database_id: str
     indicator_id: str
@@ -315,6 +322,29 @@ class VizSpecRequest(BaseModel):
     relevant_fields: list[str] | None = None
     chart_title: str | None = None
     series_labels: dict[str, str] | None = None
+
+    @field_validator("database_id", "indicator_id")
+    @classmethod
+    def _validate_identifier(cls, v: str) -> str:
+        if not re.fullmatch(_VIZ_ID_RE, v or "") or len(v) > 128:
+            raise ValueError("must match [A-Za-z0-9_.-] (max 128 chars)")
+        return v
+
+    @field_validator("country_code", "chart_type")
+    @classmethod
+    def _validate_code(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not re.fullmatch(r"[A-Za-z0-9_;,\s.\-]*", v) or len(v) > 512:
+            raise ValueError("contains disallowed characters")
+        return v
+
+    @field_validator("start_year", "end_year")
+    @classmethod
+    def _validate_year(cls, v: int | None) -> int | None:
+        if v is not None and not 1900 <= v <= 2100:
+            raise ValueError("must be between 1900 and 2100")
+        return v
 
 
 @app.post("/api/viz-spec")

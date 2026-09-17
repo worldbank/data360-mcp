@@ -47,6 +47,10 @@ _logger = logging.getLogger(__name__)
 
 VizResult = dict[str, Any]
 
+# Filenames written by save_specs_to_static: uuid4 hex plus fixed suffix.
+# Positive allowlist so a spec filename can never carry path separators.
+_SPEC_FILENAME_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_vega\.json$")
+
 
 class VizInsufficientDataError(Exception):
     """Raised when data returned from the API is too sparse to render a meaningful chart.
@@ -127,9 +131,17 @@ def save_specs_to_static(vl_spec: dict) -> str:
     spec_id = str(uuid.uuid4())
     server_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(server_dir, "..", ".."))
-    specs_dir = os.path.join(project_root, "static", "viz_specs")
+    specs_dir = os.path.abspath(os.path.join(project_root, "static", "viz_specs"))
     os.makedirs(specs_dir, exist_ok=True)
-    vega_path = os.path.join(specs_dir, f"{spec_id}_vega.json")
+    # CWE-73: confine the write to specs_dir. The filename is generated
+    # (uuid4), but the resolved path is verified so a future refactor can
+    # never turn this into a traversal.
+    filename = f"{spec_id}_vega.json"
+    if not _SPEC_FILENAME_RE.match(filename):
+        raise ValueError(f"Refusing to write unexpected spec filename: {filename!r}.")
+    vega_path = os.path.abspath(os.path.join(specs_dir, filename))
+    if os.path.commonpath([specs_dir, vega_path]) != specs_dir:
+        raise ValueError(f"Refusing to write outside spec directory: {vega_path!r}.")
     with open(vega_path, "w") as f:
         json.dump(vl_spec, f, indent=2)
     base_url = os.environ.get(
