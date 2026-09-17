@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-import random
 import time
 from pathlib import Path
 from typing import Any
@@ -12,6 +11,7 @@ from typing import Any
 import httpx
 
 from data360.config import get_data360_settings
+from data360.entropy import uniform_jitter
 from data360.http_client import (
     RETRY_SAFE_EXTENSION,
     get_background_httpx_client,
@@ -560,7 +560,7 @@ class GroupHierarchyManager:
             except Exception as e:
                 if not self._initial_fetch_succeeded:
                     sleep_for = backoff
-                    backoff = min(backoff * 2 + random.uniform(0.1, 1.0), max_backoff)
+                    backoff = min(backoff * 2 + uniform_jitter(0.1, 1.0), max_backoff)
                     _logger.warning(
                         "GroupHierarchyManager: initial background FMR fetch failed (%s). "
                         "Retrying in %.1f seconds.",
@@ -1018,7 +1018,7 @@ class CodelistManager:
                 sleep_for = self._TTL
             elif not self._initial_fetch_succeeded:
                 sleep_for = backoff
-                backoff = min(backoff * 2 + random.uniform(0.1, 1.0), max_backoff)
+                backoff = min(backoff * 2 + uniform_jitter(0.1, 1.0), max_backoff)
                 _logger.warning(
                     "CodelistManager: initial background refresh failed (%s). "
                     "Retrying in %.1f seconds.",
