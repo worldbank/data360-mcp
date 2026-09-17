@@ -427,10 +427,6 @@
 
             <div class="form-section-title" style="margin-top: 2rem;">Critique Context</div>
             <div class="form-group">
-                <label for="api-key">OpenAI API Key</label>
-                <input type="password" id="api-key" placeholder="Optional if set on backend">
-            </div>
-            <div class="form-group">
                 <label for="nl-query">Prompt Query</label>
                 <input type="text" id="nl-query" value="Compare GDP per capita across Latin American economies from 2018 to 2022">
             </div>
@@ -626,8 +622,6 @@
 
             const query = document.getElementById('nl-query').value.trim();
             const expectedDesc = document.getElementById('expected-desc').value.trim();
-            const apiKey = document.getElementById('api-key').value.trim() || null;
-
             try {
                 const response = await fetch('/api/critique', {
                     method: 'POST',
@@ -635,8 +629,7 @@
                     body: JSON.stringify({
                         spec: currentSpec,
                         query: query,
-                        expected_description: expectedDesc,
-                        openai_api_key: apiKey
+                        expected_description: expectedDesc
                     })
                 });
 
