@@ -261,7 +261,7 @@ async def _store_spec(
             save_specs_to_static(safe)
             return url
         except Exception as e:
-            _logger.warning("Charts API store failed, falling back to static local: %s", e)
+            _logger.warning("Charts API store failed, falling back to static local: %s", repr(e))
 
     # Fallback to local static file
     return save_specs_to_static(safe)
@@ -993,7 +993,7 @@ async def _fetch_data_internal(url: str) -> pd.DataFrame:
         if len(all_raw_data) >= 1000:
             _logger.warning(
                 "_fetch_data_internal: capped at 1000 rows for %s — some data may be truncated.",
-                url,
+                repr(url),
             )
             break
 
@@ -1040,7 +1040,7 @@ async def _fetch_single_indicator(
                 if len(uv) > 1 and "_T" in uv:
                     df = df[df[col] != "_T"].copy()
     except Exception as e:
-        _logger.error(f"Failed to fetch {indicator_id}: {e}")
+        _logger.error(f"Failed to fetch {repr(indicator_id)}: {repr(e)}")
         return pd.DataFrame(), None, None
 
     # Fetch title + unit from metadata
@@ -1061,7 +1061,7 @@ async def _fetch_single_indicator(
                 "measurement_unit"
             ) or meta.indicator_metadata.get("unit_measure")
     except Exception as e:
-        _logger.warning(f"Could not fetch metadata for {indicator_id}: {e}")
+        _logger.warning(f"Could not fetch metadata for {repr(indicator_id)}: {repr(e)}")
 
     # Qualify unit using unit_mult if present
     raw_unit = ""
@@ -1100,7 +1100,7 @@ async def _fetch_single_indicator(
             unit = None
 
     except Exception as e:
-        _logger.warning(f"Could not qualify unit for {indicator_id}: {e}")
+        _logger.warning(f"Could not qualify unit for {repr(indicator_id)}: {repr(e)}")
 
     return df, title, unit
 
@@ -1124,7 +1124,7 @@ def _clean_single_df(
             if has_leaf:
                 data = data[data["ref_area"].apply(lambda x: not _ghm.is_group(str(x)))]
         except Exception as e:
-            _logger.warning(f"Could not filter FMR leaf economies: {e}")
+            _logger.warning(f"Could not filter FMR leaf economies: {repr(e)}")
 
     # Trivial values for disaggregation dimensions: _T = aggregate total, _Z = not applicable.
     # unit_measure uses a different sentinel: 'U' = Unitless (defined in _UNIT_MEASURE_TRIVIAL).
@@ -1186,7 +1186,7 @@ def _clean_single_df(
                 viz_data["time_period"], temporal_frequency
             )
         except Exception as e:
-            _logger.warning(f"time_period conversion failed: {e}")
+            _logger.warning(f"time_period conversion failed: {repr(e)}")
             try:
                 viz_data["time_period"] = pd.to_datetime(
                     viz_data["time_period"]
@@ -1297,10 +1297,10 @@ def _resolve_hidden_dimension(
             viz_data = viz_data.copy()
             viz_data[target_slot] = raw_data.loc[viz_data.index, hidden_col].values
             _logger.info(
-                "Hidden dimension '%s' (%d values) surfaced as '%s'.",
-                hidden_col,
+                "Hidden dimension %s (%d values) surfaced as %s.",
+                repr(hidden_col),
                 hidden_n,
-                target_slot,
+                repr(target_slot),
             )
             return viz_data, (
                 f"Additional dimension '{hidden_col}' ({hidden_n} values) "
@@ -1316,7 +1316,7 @@ def _resolve_hidden_dimension(
         "Collapsed %d duplicate rows to row-wise mean%s.",
         n_collapsed,
         (
-            f" — hidden dim '{candidates[0][0]}' had too many values"
+            repr(f" — hidden dim '{candidates[0][0]}' had too many values")
             if candidates
             else ""
         ),
@@ -1338,7 +1338,7 @@ async def _map_country_codes(viz_data: pd.DataFrame) -> pd.DataFrame:
         country_map = await get_codelist_mapping("REF_AREA")
         viz_data[col] = viz_data[col].map(lambda x: country_map.get(x, x))
     except Exception as e:
-        _logger.warning(f"Could not map country codes: {e}")
+        _logger.warning(f"Could not map country codes: {repr(e)}")
     return viz_data
 
 
@@ -1380,7 +1380,7 @@ async def _map_dimension_codes(viz_data: pd.DataFrame) -> pd.DataFrame:
             if lookup:
                 viz_data[col] = viz_data[col].map(lambda x, lu=lookup: lu.get(x, x))
     except Exception as exc:
-        _logger.warning("Could not auto-resolve dimension codes: %s", exc)
+        _logger.warning("Could not auto-resolve dimension codes: %s", repr(exc))
     return viz_data
 
 
@@ -1442,9 +1442,9 @@ def _strip_common_prefix_in_dims(
             lambda x, m=mapping: m.get(x, x) if isinstance(x, str) else x
         )
         _logger.debug(
-            "Stripped common prefix %r from column %r (%d values)",
-            stripped_prefix,
-            col,
+            "Stripped common prefix %s from column %s (%d values)",
+            repr(stripped_prefix),
+            repr(col),
             len(unique_vals),
         )
     return df
@@ -1947,7 +1947,7 @@ async def get_viz_spec(
                                 expand_dims[dim] = codes
                             break
                 except Exception as e:
-                    _logger.warning(f"Could not resolve expand dim {dim}: {e}")
+                    _logger.warning(f"Could not resolve expand dim {repr(dim)}: {repr(e)}")
 
     # ── Fetch ──────────────────────────────────────────────────────────────────
     if expand_dims:
@@ -1973,7 +1973,7 @@ async def get_viz_spec(
                 df.columns = [c.lower() for c in df.columns]
                 return df
             except Exception as e:
-                _logger.warning(f"Expand fetch failed for {first_dim}={code}: {e}")
+                _logger.warning(f"Expand fetch failed for {repr(first_dim)}={repr(code)}: {repr(e)}")
                 return pd.DataFrame()
 
         frames = await asyncio.gather(*[_fetch_one(c) for c in codes])
@@ -2054,7 +2054,7 @@ async def get_viz_spec(
                         meta.indicator_metadata.get("periodicity", "")
                     )
     except Exception as e:
-        _logger.warning(f"Could not detect frequency: {e}")
+        _logger.warning(f"Could not detect frequency: {repr(e)}")
 
     # 4. Fetch title and unit
     chart_title_auto = "Generated Visualization"
@@ -2078,7 +2078,7 @@ async def get_viz_spec(
                     or ""
                 )
     except Exception as e:
-        _logger.warning(f"Could not fetch metadata for title: {e}")
+        _logger.warning(f"Could not fetch metadata for title: {repr(e)}")
 
     # Prefer the unit code from the actual data column over the metadata freeform string.
     # Metadata APIs often return display labels (e.g. "Unit") rather than codelist codes
@@ -2096,7 +2096,7 @@ async def get_viz_spec(
     try:
         db_map = await get_database_mapping()
     except Exception as e:
-        _logger.warning(f"Could not load database mapping for source attribution: {e}")
+        _logger.warning(f"Could not load database mapping for source attribution: {repr(e)}")
         db_map = {}
     database_display = db_map.get(database_id, database_id)
     chart_title_auto = viz_config._clean_label_generic(chart_title_auto)
@@ -2127,7 +2127,7 @@ async def get_viz_spec(
             count_units = [u for u in unique_units if str(u).upper() in ("COUNT", "VAL", "NUMBER", "VALUE")]
             selected_unit = count_units[0] if count_units else unique_units[0]
             data = data[data[unit_col] == selected_unit].copy()
-            _logger.info("Multi-unit population data detected. Auto-filtered unit_measure to '%s' to preserve age/sex breakdown structure.", selected_unit)
+            _logger.info("Multi-unit population data detected. Auto-filtered unit_measure to %s to preserve age/sex breakdown structure.", repr(selected_unit))
 
     try:
         viz_data, relevant_cols, temporal_frequency = _clean_single_df(
@@ -2227,7 +2227,7 @@ async def get_viz_spec(
                 latest_year = viz_data["year"].max()
                 viz_data = viz_data[viz_data["year"] == latest_year].copy()
                 _logger.info(
-                    f"[get_viz_spec] chart_type={chart_type}: filtered data to latest year {latest_year} "
+                    f"[get_viz_spec] chart_type={repr(chart_type)}: filtered data to latest year {repr(latest_year)} "
                     f"to prevent cluttered cross-sectional time-series."
                 )
 
@@ -2287,7 +2287,7 @@ async def get_viz_spec(
         from data360.api import get_comp_breakdown_dim_names
         _pre_dim_name_labels = await get_comp_breakdown_dim_names(database_id, indicator_id)
     except Exception as _exc:
-        _logger.debug("Could not fetch comp_breakdown dim names: %s", _exc)
+        _logger.debug("Could not fetch comp_breakdown dim names: %s", repr(_exc))
 
     # Build comprehensive data profile from real cleaned data.
     # This runs BEFORE select_strategy so coverage signals (sparse countries,
@@ -2332,7 +2332,7 @@ async def get_viz_spec(
         )
         if _sparse_from_profile and _n_countries_in_data >= 2:
             _logger.info(
-                f"[get_viz_spec] Dropping sparse countries (< 3 years) for temporal strategy: {_sparse_from_profile}"
+                f"[get_viz_spec] Dropping sparse countries (< 3 years) for temporal strategy: {repr(_sparse_from_profile)}"
             )
             viz_data = viz_data[~viz_data["country"].isin(_sparse_from_profile)].copy()
             if viz_data.empty:
@@ -2377,7 +2377,7 @@ async def get_viz_spec(
                     viz_data = viz_data.loc[idx].copy()
                     _logger.info("[get_viz_spec] CROSS_SECTIONAL strategy: filtered to latest year per country.")
             except Exception as e:
-                _logger.warning(f"Failed to filter cross-sectional data to latest year per country: {e}")
+                _logger.warning(f"Failed to filter cross-sectional data to latest year per country: {repr(e)}")
 
     # 7.05  Data sufficiency guards — return error before chart dispatch rather
     # than produce a misleading visualization with too little data.
@@ -2459,7 +2459,7 @@ async def get_viz_spec(
             )
 
     _logger.info(
-        f"Chart strategy: {strategy_result.strategy.value} — {strategy_result.reason}"
+        f"Chart strategy: {strategy_result.strategy.value} — {repr(strategy_result.reason)}"
     )
 
     if strategy_result.strategy == viz_config.ChartStrategy.FALLBACK_LINE:
@@ -2816,7 +2816,7 @@ async def get_multi_indicator_viz_spec(
                 "fallback — verify that the indicators share compatible "
                 "disaggregation dimensions.",
                 dup_mask.sum(),
-                groupby_keys,
+                repr(groupby_keys),
             )
             agg_dict = {col: "mean" for col in agg_cols}
             merged = merged.groupby(groupby_keys, as_index=False).agg(agg_dict)
@@ -2927,7 +2927,7 @@ async def get_multi_indicator_viz_spec(
         strategy_override=strategy_override,
     )
     _logger.info(
-        f"Multi-indicator strategy: {strategy_result.strategy.value} — {strategy_result.reason}"
+        f"Multi-indicator strategy: {strategy_result.strategy.value} — {repr(strategy_result.reason)}"
     )
 
     if strategy_result.strategy == viz_config.ChartStrategy.FALLBACK_LINE:
@@ -3022,14 +3022,14 @@ async def get_multi_indicator_viz_spec(
             ),
         )
     except Exception as e:
-        _logger.exception(f"Spec build failed: {e}")
+        _logger.exception(f"Spec build failed: {repr(e)}")
         return _err(f"Error building chart spec: {e}")
 
     # 9. Store and return
     try:
         db_map_multi = await get_database_mapping()
     except Exception as e:
-        _logger.warning(f"Could not load database mapping for source attribution: {e}")
+        _logger.warning(f"Could not load database mapping for source attribution: {repr(e)}")
         db_map_multi = {}
     db_displays = [
         db_map_multi.get(ind["database_id"], ind["database_id"])

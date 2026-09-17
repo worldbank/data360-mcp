@@ -79,7 +79,7 @@ def validate_tool_call(
                 for pattern in _INJECTION_REGEX:
                     if pattern.search(value):
                         _logger.warning(
-                            f"Prompt injection detected in {param_name}: {value[:100]}"
+                            f"Prompt injection detected in {repr(param_name)}: {repr(value[:100])}"
                         )
                         return (
                             False,
@@ -131,7 +131,7 @@ def validate_search_query(query: str) -> tuple[bool, str | None]:
     for pattern in _INJECTION_REGEX:
         if pattern.search(stripped):
             _logger.warning(
-                f"Prompt injection detected in search query: {stripped[:MAX_SEARCH_QUERY_LENGTH]}"
+                f"Prompt injection detected in search query: {repr(stripped[:MAX_SEARCH_QUERY_LENGTH])}"
             )
             return (
                 False,

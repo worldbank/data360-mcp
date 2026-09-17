@@ -457,13 +457,13 @@ async def debug_log(request: Request) -> Response:
 
     try:
         body = await request.json()
-        print(f"\n[IFRAME DEBUG LOG] {body}\n", flush=True)
+        print(f"\n[IFRAME DEBUG LOG] {repr(body)}\n", flush=True)
         return JSONResponse(
             {"status": "ok"},
             headers={"Access-Control-Allow-Origin": "*"}
         )
     except Exception as e:
-        print(f"Error reading debug log: {e}", flush=True)
+        print(f"Error reading debug log: {repr(e)}", flush=True)
         return JSONResponse(
             {"error": str(e)},
             status_code=400,

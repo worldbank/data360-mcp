@@ -57,6 +57,23 @@ uv run ruff check .
 uv run pyright
 ```
 
+### Log safety (CWE-117, log forging)
+
+Never interpolate untrusted data (tool arguments, JSON-RPC bodies, request
+headers, upstream API payloads, exception text) into a log call raw — a CR/LF in
+the value forges log entries. Pass it through `repr()`, which is one of the only
+cleansers Veracode's Python engine recognizes for CWE-117 (alongside `encode()`
+and `anticrlf()`):
+
+```python
+_logger.warning("Tuning failed for %s: %s", repr(indicator_id), repr(exc))
+```
+
+This also applies to values placed in `extra=` dimensions (e.g. audit logs
+forwarded to App Insights/Splunk). `tests/test_log_injection.py` drives the real
+entry points and asserts each such log line stays on one line with the CR/LF kept
+as an escaped `\r\n`.
+
 ## Third-Party Licenses
 
 To regenerate `THIRD_PARTY_LICENSES.md`:
