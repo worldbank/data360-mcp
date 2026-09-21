@@ -4,12 +4,12 @@ These resources provide static context to help LLMs understand the Data360 syste
 Includes ``data360://agent-recipe`` for host integrators (LangGraph / data360-mcp-agent).
 """
 
+import html
 import json
 from datetime import datetime
 
 from fastmcp.apps import AppConfig, ResourceCSP
 from data360.providers import get_database_mapping
-from data360.response_safety import escape_text
 
 from ._server_definition import mcp
 from .agent_recipe import AGENT_RECIPE_MARKDOWN
@@ -484,7 +484,7 @@ async def debug_log(request: Request) -> Response:
     except Exception as e:
         print(f"Error reading debug log: {repr(e)}", flush=True)
         return JSONResponse(
-            {"error": escape_text(e)},
+            {"error": html.escape(str(e), quote=True)},
             status_code=400,
             headers={"Access-Control-Allow-Origin": "*"}
         )
