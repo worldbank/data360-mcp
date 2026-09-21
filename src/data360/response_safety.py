@@ -4,8 +4,14 @@ Veracode's "Improper Neutralization of Script-Related HTML Tags in a Web Page
 (Basic XSS)" findings are all about untrusted data reaching an HTTP response
 body. The cleansers its Python engine recognizes for CWE-80 are ``jsonify()``,
 ``flask.jsonify()``, ``html.escape()``, ``markupsafe.escape()``,
-``flask.escape()`` and ``bleach.clean()`` — so request-derived values that are
-echoed into a response go through :func:`html.escape` on the way in.
+``flask.escape()`` and ``bleach.clean()``.
+
+The recognized cleanser must be called *at the response sink*. Wrappers that
+call it internally are invisible to the engine: the 2026-09 ``escape_text()``
+helper was verified to escape correctly yet the rescan re-reported every line
+that only went through it. Request-derived values echoed into a response are
+therefore escaped with a visible ``html.escape(...)`` call at the point they
+enter the payload (see ``server.py``, ``mcp_server/resources.py``).
 
 Where the untrusted value lands in a *script* context (a value embedded into a
 ``<script>`` block), HTML escaping is not enough on its own — the value must be
@@ -16,23 +22,12 @@ in ``templates/render.py`` for every extension this package uses.
 
 from __future__ import annotations
 
-import html
 from typing import Any
 
 __all__ = [
     "jsonrpc_id",
-    "escape_text",
     "install_response_hardening",
 ]
-
-
-def escape_text(value: Any) -> str:
-    """HTML-escape untrusted text before it is placed in a response body.
-
-    ``html.escape(..., quote=True)`` escapes ``& < > " '``, covering element-body
-    and attribute contexts.
-    """
-    return html.escape(str(value), quote=True)
 
 
 def jsonrpc_id(msg_id: Any) -> Any:

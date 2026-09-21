@@ -1,4 +1,5 @@
 import hashlib
+import html
 import json
 import logging
 import os
@@ -24,7 +25,6 @@ from data360.otel_setup import (
     instrument_httpx_outbound,
 )
 from data360.response_safety import (
-    escape_text,
     install_response_hardening,
     jsonrpc_id,
 )
@@ -148,10 +148,11 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                             "jsonrpc": "2.0",
                             "id": jsonrpc_id(body.get("id")),
                             # `error_msg` embeds the offending tool name/parameter,
-                            # so it is request-derived: escape before reflecting.
+                            # so it is request-derived. Keep the html.escape() call
+                            # at this sink: Veracode does not follow wrapper helpers.
                             "error": {
                                 "code": -32001,
-                                "message": escape_text(error_msg),
+                                "message": html.escape(str(error_msg), quote=True),
                             },
                         },
                     )
@@ -171,7 +172,9 @@ class SecurityValidationMiddleware(BaseHTTPMiddleware):
                                 "id": jsonrpc_id(body.get("id")),
                                 "error": {
                                     "code": -32001,
-                                    "message": escape_text(error_msg),
+                                    "message": html.escape(
+                                        str(error_msg), quote=True
+                                    ),
                                 },
                             },
                         )
