@@ -221,7 +221,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             "timestamp": timestamp,
             "prompt": repr(prompt),
             "prompt_hash": prompt_hash,
-            "status_code": str(response.status_code),
+            "status_code": repr(response.status_code),
             "path": repr(request.url.path),
         }
 
