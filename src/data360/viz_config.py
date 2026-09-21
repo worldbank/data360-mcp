@@ -1880,7 +1880,7 @@ def explain_chart_routing(
             scale_notes     : Notes on scale compatibility for multi-indicator data
             routing_inputs  : Echo of the structural inputs used for reproducibility
     """
-    import numpy as np
+    from data360.entropy import uniform_jitter
 
     # ── Build a synthetic DataFrame matching the described data shape ──────────
     countries = [f"C{i}" for i in range(max(country_count, 1))]
@@ -1891,7 +1891,7 @@ def explain_chart_routing(
     for c in countries:
         c_years = years[:max(1, round(avg_years_per_country))]
         for y in c_years:
-            row: dict = {"country": c, "year": y, "value": float(np.random.uniform(10, 100))}
+            row: dict = {"country": c, "year": y, "value": uniform_jitter(10, 100)}
             for dim in (breakdown_dims or []):
                 row[dim] = f"{dim}_val"
             rows.append(row)
@@ -1904,7 +1904,7 @@ def explain_chart_routing(
         for i, ind in enumerate(indicator_scales[:n_indicators]):
             col_name = f"IND_{i}"
             approx_max = float(ind.get("approx_max", 100.0))
-            df[col_name] = [float(np.random.uniform(approx_max * 0.5, approx_max)) for _ in range(len(df))]
+            df[col_name] = [uniform_jitter(approx_max * 0.5, approx_max) for _ in range(len(df))]
             ind_cols.append(col_name)
 
     # ── Run routing engine ─────────────────────────────────────────────────────
