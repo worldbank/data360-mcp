@@ -11,7 +11,15 @@ call it internally are invisible to the engine: the 2026-09 ``escape_text()``
 helper was verified to escape correctly yet the rescan re-reported every line
 that only went through it. Request-derived values echoed into a response are
 therefore escaped with a visible ``html.escape(...)`` call at the point they
-enter the payload (see ``server.py``, ``mcp_server/resources.py``).
+enter the payload (see ``server.py``, ``mcp_server/resources.py``). The same
+rule holds for CWE-117: a log sink must call ``repr`` itself, not through a
+helper.
+
+Note that ``jsonify`` is a scanner-recognized sink marker, not an HTML encoder:
+it emits plain ``json.dumps`` output and escapes nothing. What keeps these JSON
+responses from being rendered as HTML is the JSON content type plus
+``X-Content-Type-Options: nosniff`` (see :func:`install_response_hardening`),
+with ``html.escape`` on short reflected fragments as defence in depth.
 
 Where the untrusted value lands in a *script* context (a value embedded into a
 ``<script>`` block), HTML escaping is not enough on its own — the value must be

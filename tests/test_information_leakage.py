@@ -170,8 +170,47 @@ class TestVizSpecResponseIsClosed:
         used = {
             "$schema", "config", "data", "encoding", "height", "layer", "mark",
             "title", "width", "vconcat", "hconcat", "facet", "concat", "resolve",
+            "spec",
         }
         assert used <= _VEGA_LITE_TOP_LEVEL_KEYS
+
+    def test_spec_with_only_unknown_keys_is_rejected_generically(self, client):
+        with patch(
+            "data360.visualization.get_viz_spec",
+            new_callable=AsyncMock,
+            return_value={"spec": {"debug": 1, "internal": "x"}, "strategy": "temporal_single"},
+        ):
+            response = client.post(
+                "/api/viz-spec",
+                json={"database_id": "WB_WDI", "indicator_id": "WB_WDI_NY_GDP_MKTP_KD_ZG"},
+            )
+
+        assert response.status_code == 500
+        assert response.json() == {"error": "Vega-Lite spec was not generated."}
+
+    def test_nested_spec_content_is_relayed_by_design(self, client):
+        """Only top-level keys are allow-listed; nested content is the chart payload.
+
+        `data.url` and `data.values` are legitimate Vega-Lite fields, so the filter
+        deliberately stops at the top level. This pins that boundary so the
+        documented guarantee matches the code.
+        """
+        nested_spec = {
+            "mark": "line",
+            "data": {"url": "https://example.org/chart.json", "values": [{"y": 1}]},
+        }
+        with patch(
+            "data360.visualization.get_viz_spec",
+            new_callable=AsyncMock,
+            return_value={"spec": nested_spec, "strategy": "temporal_single", "reason": "r"},
+        ):
+            response = client.post(
+                "/api/viz-spec",
+                json={"database_id": "WB_WDI", "indicator_id": "WB_WDI_NY_GDP_MKTP_KD_ZG"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["spec"]["data"]["url"] == "https://example.org/chart.json"
 
 
 class TestRateLimitScriptLogging:

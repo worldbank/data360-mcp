@@ -20,6 +20,7 @@ REPORTED_FILES = (
     "src/data360/entropy.py",
     "src/data360/http_client.py",
     "src/data360/providers.py",
+    "src/data360/viz_config.py",
     "tests/test_rate_limits.py",
 )
 
