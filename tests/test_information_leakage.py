@@ -85,6 +85,95 @@ class TestVizSpecErrorIsGeneric:
         assert "internal stack detail" not in response.text
 
 
+class TestVizSpecResponseIsClosed:
+    """CWE-201: the success response is a closed contract, not a relay of `res`."""
+
+    def test_unexpected_spec_keys_and_injected_detail_are_not_sent(self, client):
+        hostile = {
+            "spec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "mark": "line",
+                "encoding": {},
+                "debug": {"env": "INTERNAL_SECRET"},
+                "url": "http://169.254.169.254/latest/meta-data/",
+            },
+            "strategy": "temporal_single",
+            "reason": "Single indicator, 5 years, 3 economies → line chart",
+        }
+        with patch(
+            "data360.visualization.get_viz_spec",
+            new_callable=AsyncMock,
+            return_value=hostile,
+        ):
+            response = client.post(
+                "/api/viz-spec",
+                json={"database_id": "WB_WDI", "indicator_id": "WB_WDI_NY_GDP_MKTP_KD_ZG"},
+            )
+
+        assert response.status_code == 200
+        assert sorted(response.json()) == ["reason", "spec", "strategy"]
+        assert "INTERNAL_SECRET" not in response.text
+        assert "169.254" not in response.text
+        assert "debug" not in response.json()["spec"]
+        assert "url" not in response.json()["spec"]
+
+    def test_unknown_strategy_is_coerced_to_a_known_value(self, client):
+        with patch(
+            "data360.visualization.get_viz_spec",
+            new_callable=AsyncMock,
+            return_value={"spec": {"mark": "line"}, "strategy": "not-a-strategy", "reason": None},
+        ):
+            response = client.post(
+                "/api/viz-spec",
+                json={"database_id": "WB_WDI", "indicator_id": "WB_WDI_NY_GDP_MKTP_KD_ZG"},
+            )
+
+        assert response.json()["strategy"] == "unknown"
+
+    def test_reason_control_characters_are_stripped_and_length_clipped(self, client):
+        hostile_reason = "line one\r\nforged: entry" + "A" * 400
+        with patch(
+            "data360.visualization.get_viz_spec",
+            new_callable=AsyncMock,
+            return_value={
+                "spec": {"mark": "line"},
+                "strategy": "temporal_single",
+                "reason": hostile_reason,
+            },
+        ):
+            response = client.post(
+                "/api/viz-spec",
+                json={"database_id": "WB_WDI", "indicator_id": "WB_WDI_NY_GDP_MKTP_KD_ZG"},
+            )
+
+        reason = response.json()["reason"]
+        assert "\r" not in reason and "\n" not in reason
+        assert len(reason) <= 300
+
+    def test_non_object_spec_is_rejected_generically(self, client):
+        with patch(
+            "data360.visualization.get_viz_spec",
+            new_callable=AsyncMock,
+            return_value={"spec": "not-an-object", "strategy": "temporal_single"},
+        ):
+            response = client.post(
+                "/api/viz-spec",
+                json={"database_id": "WB_WDI", "indicator_id": "WB_WDI_NY_GDP_MKTP_KD_ZG"},
+            )
+
+        assert response.status_code == 500
+        assert response.json() == {"error": "Vega-Lite spec was not generated."}
+
+    def test_vega_lite_keys_used_by_this_repo_survive_the_allow_list(self):
+        from data360.server import _VEGA_LITE_TOP_LEVEL_KEYS
+
+        used = {
+            "$schema", "config", "data", "encoding", "height", "layer", "mark",
+            "title", "width", "vconcat", "hconcat", "facet", "concat", "resolve",
+        }
+        assert used <= _VEGA_LITE_TOP_LEVEL_KEYS
+
+
 class TestRateLimitScriptLogging:
     """CWE-532: the load-test script's log output must not carry the endpoint's secrets."""
 
