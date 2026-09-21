@@ -257,3 +257,36 @@ class TestBackfillSinks:
 
         _assert_single_line(caplog, "Failed to backfill primary metadata")
         _assert_no_multiline_records(caplog)
+
+
+class TestAuditLogMiddleware:
+    """Audit dimensions forwarded to App Insights/Splunk (``custom_dimensions``).
+
+    ``status_code`` comes off the middleware's ``call_next`` response and the
+    request metadata (forwarded-for header, path) is client-controlled; all of
+    them reach the ``audit`` logger and must be single-line.
+    """
+
+    def test_crlf_in_forwarded_for_cannot_forge_an_audit_dimension(self, caplog):
+        from data360.server import app
+
+        with caplog.at_level(logging.INFO, logger="audit"):
+            with TestClient(app) as client:
+                client.post(
+                    "/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/list",
+                        "params": {},
+                    },
+                    headers={"X-Forwarded-For": "203.0.113.9" + CRLF + FORGED},
+                )
+
+        records = [r for r in caplog.records if r.name == "audit"]
+        assert records, [r.name for r in caplog.records]
+        dimensions = records[-1].custom_dimensions
+        for key, value in dimensions.items():
+            assert isinstance(value, str), (key, value)
+            assert "\r" not in value and "\n" not in value, (key, value)
+        assert "\\r\\n" in dimensions["requestor_id"], dimensions["requestor_id"]
