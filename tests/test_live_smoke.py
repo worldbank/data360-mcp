@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import socket
 import subprocess
 import sys
 import threading
@@ -133,20 +132,9 @@ class Server:
             self._proc.kill()
 
 
-def _port_is_free(port: int) -> bool:
-    with socket.socket() as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return sock.connect_ex(("127.0.0.1", port)) != 0
-
-
 @pytest.fixture(scope="module")
 def server() -> Iterator[Server]:
     port = int(os.environ.get("DATA360_LIVE_SMOKE_PORT", str(DEFAULT_PORT)))
-    if not _port_is_free(port):
-        pytest.fail(
-            f"port {port} is already in use — stop that server or set "
-            f"DATA360_LIVE_SMOKE_PORT"
-        )
     instance = Server(port)
     instance.start()
     try:
