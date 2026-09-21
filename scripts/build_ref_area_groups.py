@@ -11,17 +11,16 @@ between this build-time script and the background sync that runs at runtime.
 Usage:
     uv run python scripts/build_ref_area_groups.py
 
-To fetch the latest (or specific version) directly from FMR (requires VPN):
+To fetch the latest directly from FMR (requires VPN):
     uv run python scripts/build_ref_area_groups.py --fetch
-    uv run python scripts/build_ref_area_groups.py --fetch --hierarchy-version 38.0 --codelist-version 2.0
 
 Re-run this script whenever:
 - A new FMR hierarchy version is available (e.g. annual income reclassification)
 - The examples/ source files are updated
 
-The hierarchy is versioned (omitting version returns latest from FMR):
+The two request URLs are hardcoded in fetch_fmr_data; FMR serves the current
+hierarchy and codelist, so no version argument is needed or accepted:
   https://fmr.worldbank.org/FMR/sdmx/v2/structure/hierarchy/WB/H_REF_AREA_GROUPS/
-The codelist:
   https://fmr.worldbank.org/FMR/sdmx/v2/structure/codelist/WB/CL_REF_GROUPINGS/
 
 Group types included in output (all types with country memberships):
@@ -38,10 +37,7 @@ Excluded:
 
 import argparse
 import json
-import os
-import re
 import sys
-import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -57,43 +53,31 @@ from data360.providers import GroupHierarchyManager  # noqa: E402
 # absolute resolved path, so the root must be absolute too.
 REPO_ROOT = _REPO_ROOT.resolve()
 
-# The only origin this script is allowed to fetch from. Pinning it is what stops a
-# caller-supplied URL from pointing the request at an internal address, a file://
-# path, or any other host (CWE-918). Configurable, defaulting to the public FMR host.
-DEFAULT_FMR_ORIGIN = "https://fmr.worldbank.org"
-
-
-def allowed_fmr_origin() -> str:
-    """Origin permitted for the FMR fetch: ``FMR_ORIGIN`` env var, else the default."""
-    return os.environ.get("FMR_ORIGIN", DEFAULT_FMR_ORIGIN)
 HIERARCHY_FILE = REPO_ROOT / "examples" / "H_AREA_GROUPS38.json"
 CODELIST_FILE = REPO_ROOT / "examples" / "CL_REF_GROUPINGS.json"
 OUTPUT_FILE = REPO_ROOT / "src" / "data360" / "ref_area_groups.json"
 
 
-def validated_fmr_url(url: str) -> str:
-    """Return *url* only when it targets the FMR origin over https (CWE-918).
+def fetch_fmr_data(document: str, output_path: Path) -> None:
+    """Download one FMR document and save it inside the repository.
 
-    The destination of this request must not be steerable by the caller: without
-    this check an arbitrary URL (``file:///etc/passwd``, a cloud metadata
-    endpoint, an internal host) would be fetched server-side.
+    ``document`` only selects which hardcoded FMR URL is requested; no caller
+    value is ever concatenated into the URL, so neither the destination
+    (CWE-918) nor a ``file://`` read (CWE-73) can be steered. ``output_path``
+    must stay inside the repository.
     """
-    origin = allowed_fmr_origin()
-    parsed = urllib.parse.urlparse(url)
-    expected = urllib.parse.urlparse(origin)
-    if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
-        raise ValueError(f"refusing to fetch outside {origin}: {url!r}")
-    return url
-
-
-def fetch_fmr_data(url: str, output_path: Path) -> None:
-    """Download JSON from FMR and save it to output_path.
-
-    Both the destination (CWE-918) and the write target (CWE-73) are pinned: the
-    URL must be on :data:`FMR_ORIGIN`, and ``output_path`` must stay inside the
-    repository.
-    """
-    url = validated_fmr_url(url)
+    if document == "hierarchy":
+        url = (
+            "https://fmr.worldbank.org/FMR/sdmx/v2/structure/hierarchy/WB/"
+            "H_REF_AREA_GROUPS/?format=sdmx-json"
+        )
+    elif document == "codelist":
+        url = (
+            "https://fmr.worldbank.org/FMR/sdmx/v2/structure/codelist/WB/"
+            "CL_REF_GROUPINGS/?format=sdmx-json"
+        )
+    else:
+        raise ValueError(f"unknown FMR document: {document!r}")
 
     resolved = output_path.resolve()
     if not resolved.is_relative_to(REPO_ROOT):
@@ -112,27 +96,6 @@ def fetch_fmr_data(url: str, output_path: Path) -> None:
         print(f"  Error fetching {url}: {e}")
         print("  Note: FMR requires VPN access. If you are not on the VPN, this will fail.")
         raise
-
-
-_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,3}")
-
-
-def validated_version(raw: str, flag: str) -> str:
-    """Return an FMR version only if it matches ``<digits>[.<digits>]`` (CWE-73).
-
-    The value is concatenated into the FMR URL passed to ``urlopen``, so anything
-    that is not a plain version number would let the caller redirect that request
-    (extra path segments, or a scheme/host of their choosing). Reject it instead
-    of trying to strip characters out of it.
-    """
-    value = raw.strip()
-    if not value:
-        return ""
-    if not _VERSION_RE.fullmatch(value):
-        raise SystemExit(
-            f"{flag} must be a version like '38.0' (digits and dots only), got {value!r}"
-        )
-    return value
 
 
 def build(hierarchy_path: Path, codelist_path: Path, output_path: Path) -> None:
@@ -188,46 +151,17 @@ def main():
         "--fetch",
         action="store_true",
         help=(
-            "Fetch the latest (or specified version) JSON files from FMR "
-            "(VPN required) and overwrite local examples."
+            "Fetch the latest JSON files from FMR (VPN required) and overwrite "
+            "local examples."
         ),
-    )
-    parser.add_argument(
-        "--hierarchy-version",
-        type=str,
-        default="",
-        help="FMR hierarchy version to fetch (e.g. 38.0). If empty, fetches latest.",
-    )
-    parser.add_argument(
-        "--codelist-version",
-        type=str,
-        default="",
-        help="FMR codelist version to fetch (e.g. 2.0). If empty, fetches latest.",
     )
 
     args = parser.parse_args()
 
     if args.fetch:
-        hierarchy_version = validated_version(args.hierarchy_version, "--hierarchy-version")
-        codelist_version = validated_version(args.codelist_version, "--codelist-version")
-
-        hierarchy_url = (
-            "https://fmr.worldbank.org/FMR/sdmx/v2/structure/hierarchy/WB/H_REF_AREA_GROUPS/"
-        )
-        if hierarchy_version:
-            hierarchy_url += hierarchy_version
-        hierarchy_url += "?format=sdmx-json"
-
-        codelist_url = (
-            "https://fmr.worldbank.org/FMR/sdmx/v2/structure/codelist/WB/CL_REF_GROUPINGS/"
-        )
-        if codelist_version:
-            codelist_url += codelist_version
-        codelist_url += "?format=sdmx-json"
-
         print("--- Fetching source data from FMR ---")
-        fetch_fmr_data(hierarchy_url, HIERARCHY_FILE)
-        fetch_fmr_data(codelist_url, CODELIST_FILE)
+        fetch_fmr_data("hierarchy", HIERARCHY_FILE)
+        fetch_fmr_data("codelist", CODELIST_FILE)
         print("-------------------------------------\n")
 
     build(HIERARCHY_FILE, CODELIST_FILE, OUTPUT_FILE)
