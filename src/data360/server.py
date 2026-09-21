@@ -220,25 +220,39 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             pass
         response = await call_next(request)
 
-        properties = {
-            "session_id": session_id,
-            "requestor_id": repr(requestor_id),
-            "timestamp": timestamp,
-            "prompt": repr(prompt),
-            "prompt_hash": prompt_hash,
-            "status_code": repr(response.status_code),
-            "path": repr(request.url.path),
-        }
-
-        # Log to traces with custom dimensions
-        _audit_logger.info("mcp_audit", extra={"custom_dimensions": properties})
+        # CWE-117: repr is the recognized cleanser for log forging and has to be
+        # called at the log statement itself — a helper around it is not treated
+        # as a cleanser, so each sink builds its dims inline rather than sharing
+        # a pre-built dict.
+        _audit_logger.info(
+            "mcp_audit",
+            extra={
+                "custom_dimensions": {
+                    "session_id": session_id,
+                    "requestor_id": repr(requestor_id),
+                    "timestamp": timestamp,
+                    "prompt": repr(prompt),
+                    "prompt_hash": prompt_hash,
+                    "status_code": repr(response.status_code),
+                    "path": repr(request.url.path),
+                }
+            },
+        )
 
         # Also log as custom event for Splunk forwarding
         if _telemetry_client:
             _telemetry_client.info(
                 "MCP_Request",
                 extra={
-                    "custom_dimensions": properties,
+                    "custom_dimensions": {
+                        "session_id": session_id,
+                        "requestor_id": repr(requestor_id),
+                        "timestamp": timestamp,
+                        "prompt": repr(prompt),
+                        "prompt_hash": prompt_hash,
+                        "status_code": repr(response.status_code),
+                        "path": repr(request.url.path),
+                    },
                     "event_name": "MCP_Request",
                 },
             )
@@ -329,20 +343,22 @@ async def root():
 
 
 
-# CWE-201: /api/viz-spec is fed by outbound Data360 API responses, so the
-# response is rebuilt against a closed contract instead of relayed. Only the
-# three fields below can leave, each through a named allow-list.
+# CWE-201: /api/viz-spec is fed by outbound Data360 API responses, so the reply
+# is rebuilt against a closed contract instead of relaying `res`. Only the three
+# fields below can leave. `spec` is filtered at the top level only — nested
+# content is the chart payload and is relayed as-is by design.
 _VEGA_LITE_TOP_LEVEL_KEYS: frozenset[str] = frozenset({
     "$schema", "align", "autosize", "background", "bounds", "center", "columns",
     "concat", "config", "data", "datasets", "description", "encoding", "facet",
     "hconcat", "height", "layer", "mark", "name", "padding", "params",
-    "projection", "repeat", "resolve", "selection", "spacing", "title",
+    "projection", "repeat", "resolve", "selection", "spacing", "spec", "title",
     "transform", "usermeta", "view", "vconcat", "width",
 })
 
 _REASON_MAX_LEN = 300
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 _GENERIC_REASON = "Chart strategy selected from the data structure."
+_UNKNOWN_STRATEGY = "unknown"
 
 
 class VizSpecResponse(BaseModel):
@@ -350,7 +366,7 @@ class VizSpecResponse(BaseModel):
 
     spec: dict[str, Any]
     strategy: str
-    reason: str | None = None
+    reason: str
 
 
 def _clean_spec(raw: Any) -> dict[str, Any]:
@@ -361,7 +377,7 @@ def _clean_strategy(raw: Any) -> str:
     try:
         return ChartStrategy(raw).value
     except (ValueError, TypeError):
-        return "unknown"
+        return _UNKNOWN_STRATEGY
 
 
 def _clean_reason(raw: Any) -> str:
@@ -429,8 +445,12 @@ async def get_viz_spec_endpoint(req: VizSpecRequest):
     if not isinstance(spec, dict) or not spec:
         return JSONResponse(status_code=500, content={"error": "Vega-Lite spec was not generated."})
 
+    cleaned_spec = _clean_spec(spec)
+    if not cleaned_spec:
+        return JSONResponse(status_code=500, content={"error": "Vega-Lite spec was not generated."})
+
     return VizSpecResponse(
-        spec=_clean_spec(spec),
+        spec=cleaned_spec,
         strategy=_clean_strategy(res.get("strategy")),
         reason=_clean_reason(res.get("reason")),
     )
