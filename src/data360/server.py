@@ -3,6 +3,7 @@ import html
 import json
 import logging
 import os
+import re
 import uuid
 
 from contextlib import asynccontextmanager
@@ -28,6 +29,7 @@ from data360.response_safety import (
     install_response_hardening,
     jsonrpc_id,
 )
+from data360.viz_config import ChartStrategy
 
 _audit_logger = logging.getLogger("audit")
 _telemetry_client = None
@@ -327,6 +329,48 @@ async def root():
 
 
 
+# CWE-201: /api/viz-spec is fed by outbound Data360 API responses, so the
+# response is rebuilt against a closed contract instead of relayed. Only the
+# three fields below can leave, each through a named allow-list.
+_VEGA_LITE_TOP_LEVEL_KEYS: frozenset[str] = frozenset({
+    "$schema", "align", "autosize", "background", "bounds", "center", "columns",
+    "concat", "config", "data", "datasets", "description", "encoding", "facet",
+    "hconcat", "height", "layer", "mark", "name", "padding", "params",
+    "projection", "repeat", "resolve", "selection", "spacing", "title",
+    "transform", "usermeta", "view", "vconcat", "width",
+})
+
+_REASON_MAX_LEN = 300
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+_GENERIC_REASON = "Chart strategy selected from the data structure."
+
+
+class VizSpecResponse(BaseModel):
+    """Exactly what /api/viz-spec sends; nothing else can leave."""
+
+    spec: dict[str, Any]
+    strategy: str
+    reason: str | None = None
+
+
+def _clean_spec(raw: Any) -> dict[str, Any]:
+    return {k: v for k, v in raw.items() if k in _VEGA_LITE_TOP_LEVEL_KEYS}
+
+
+def _clean_strategy(raw: Any) -> str:
+    try:
+        return ChartStrategy(raw).value
+    except (ValueError, TypeError):
+        return "unknown"
+
+
+def _clean_reason(raw: Any) -> str:
+    if not isinstance(raw, str):
+        return _GENERIC_REASON
+    text = _CONTROL_CHARS.sub(" ", raw).strip()
+    return text[:_REASON_MAX_LEN] or _GENERIC_REASON
+
+
 class VizSpecRequest(BaseModel):
     database_id: str
     indicator_id: str
@@ -340,7 +384,7 @@ class VizSpecRequest(BaseModel):
     series_labels: dict[str, str] | None = None
 
 
-@app.post("/api/viz-spec")
+@app.post("/api/viz-spec", response_model=VizSpecResponse)
 async def get_viz_spec_endpoint(req: VizSpecRequest):
     from data360 import visualization as data360_viz
 
@@ -382,14 +426,14 @@ async def get_viz_spec_endpoint(req: VizSpecRequest):
         )
 
     spec = res.get("spec")
-    if not spec:
+    if not isinstance(spec, dict) or not spec:
         return JSONResponse(status_code=500, content={"error": "Vega-Lite spec was not generated."})
 
-    return {k: v for k, v in {
-        "spec": spec,
-        "reason": res.get("reason"),
-        "strategy": res.get("strategy"),
-    }.items() if v is not None}
+    return VizSpecResponse(
+        spec=_clean_spec(spec),
+        strategy=_clean_strategy(res.get("strategy")),
+        reason=_clean_reason(res.get("reason")),
+    )
 
 
 
