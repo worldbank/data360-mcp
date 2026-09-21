@@ -30,12 +30,6 @@ from data360.visualization import (
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# A real FMR URL: the only destination build_ref_area_groups may fetch.
-FMR_URL = (
-    "https://fmr.worldbank.org/FMR/sdmx/v2/structure/hierarchy/"
-    "WB/H_REF_AREA_GROUPS/38.0?format=sdmx-json"
-)
-
 # A label that is not a string: the CWE-73 validation must reject it outright.
 INVALID_LABEL = 42
 
@@ -285,49 +279,14 @@ def fmr_script():
     return module
 
 
-class TestFmrVersionArgument:
-    def test_accepts_version_like_values(self, fmr_script):
-        assert fmr_script.validated_version("38.0", "--hierarchy-version") == "38.0"
-        assert fmr_script.validated_version(" 38 ", "--hierarchy-version") == "38"
-        assert fmr_script.validated_version("1.2.3.4", "--codelist-version") == "1.2.3.4"
-        assert fmr_script.validated_version("", "--hierarchy-version") == ""
-
-    @pytest.mark.parametrize(
-        "hostile",
-        [
-            "38.0/../../../etc/passwd",
-            "../../..",
-            "file:///etc/passwd",
-            "https://evil.example.com/",
-            "38.0?format=text",
-            "1.2.3.4.5",
-            "38 0",
-        ],
-    )
-    def test_rejects_anything_that_is_not_a_version(self, fmr_script, hostile):
-        with pytest.raises(SystemExit):
-            fmr_script.validated_version(hostile, "--hierarchy-version")
-
-
 class TestFmrScriptConfiguration:
     def test_repo_root_is_absolute_so_containment_works_from_the_cli(self, fmr_script):
         """`python scripts/build_ref_area_groups.py` leaves __file__ relative."""
         assert fmr_script.REPO_ROOT.is_absolute()
 
-    def test_origin_defaults_to_fmr_and_is_configurable(self, fmr_script, monkeypatch):
-        assert fmr_script.allowed_fmr_origin() == "https://fmr.worldbank.org"
 
-        monkeypatch.setenv("FMR_ORIGIN", "https://fmr-mirror.internal")
-        assert fmr_script.allowed_fmr_origin() == "https://fmr-mirror.internal"
-
-        # the configured origin is what the guard accepts and refuses against
-        assert fmr_script.validated_fmr_url("https://fmr-mirror.internal/x")
-        with pytest.raises(ValueError, match="refusing to fetch outside"):
-            fmr_script.validated_fmr_url("https://fmr.worldbank.org/x")
-
-
-class TestFmrDestinationAllowList:
-    """CWE-918: only the pinned FMR origin may be fetched."""
+class TestFmrDestinationIsHardcoded:
+    """CWE-918/CWE-73: no input reaches the request URL."""
 
     @pytest.fixture
     def fmr_urls(self, fmr_script, monkeypatch):
@@ -341,31 +300,39 @@ class TestFmrDestinationAllowList:
         monkeypatch.setattr(fmr_script.urllib.request, "urlopen", _stub)
         return attempts
 
+    @pytest.mark.parametrize("document", ["hierarchy", "codelist"])
+    def test_each_document_maps_to_its_fixed_fmr_url(self, fmr_script, fmr_urls, document):
+        with pytest.raises(RuntimeError, match="stubbed network"):
+            fmr_script.fetch_fmr_data(document, REPO_ROOT / "examples" / "x.json")
+
+        assert len(fmr_urls) == 1
+        assert fmr_urls[0].startswith("https://fmr.worldbank.org/FMR/sdmx/v2/structure/")
+
     @pytest.mark.parametrize(
         "hostile",
         [
             "file:///etc/passwd",
-            "file:///tmp/anything.json",
-            "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
-            "http://localhost:8021/mcp",
-            "http://127.0.0.1:8021/mcp",
+            "http://169.254.169.254/latest/meta-data/",
             "https://evil.example.com/FMR/sdmx/v2/structure/hierarchy/WB/H_REF_AREA_GROUPS/",
             "https://fmr.worldbank.org.evil.example.com/x",
+            "../../etc/passwd",
+            "",
         ],
     )
-    def test_non_fmr_destinations_are_refused_without_a_request(
+    def test_unknown_documents_are_refused_without_a_request(
         self, fmr_script, fmr_urls, hostile
     ):
-        with pytest.raises(ValueError, match="refusing to fetch outside"):
+        with pytest.raises(ValueError, match="unknown FMR document"):
             fmr_script.fetch_fmr_data(hostile, REPO_ROOT / "examples" / "x.json")
 
         assert fmr_urls == [], f"a request was attempted for {hostile!r}"
 
-    def test_the_fmr_origin_is_allowed(self, fmr_script, fmr_urls):
-        with pytest.raises(RuntimeError, match="stubbed network"):
-            fmr_script.fetch_fmr_data(FMR_URL, REPO_ROOT / "examples" / "x.json")
+    def test_the_request_takes_no_url_parameter(self, fmr_script):
+        """Source-level: the sink can only ever see a literal in the function body."""
+        source = (REPO_ROOT / "scripts" / "build_ref_area_groups.py").read_text()
 
-        assert fmr_urls == [FMR_URL]
+        assert "def fetch_fmr_data(url" not in source
+        assert "urllib.request.Request(url" in source
 
 
 class TestFmrOutputContainment:
@@ -373,7 +340,7 @@ class TestFmrOutputContainment:
         outside = tmp_path.parent / "outside.json"
 
         with pytest.raises(ValueError, match="outside the repository"):
-            fmr_script.fetch_fmr_data(FMR_URL, outside)
+            fmr_script.fetch_fmr_data("hierarchy", outside)
 
     def test_accepts_a_path_inside_the_repository(self, fmr_script, monkeypatch):
         inside = REPO_ROOT / "examples" / "ignored-by-this-test.json"
@@ -386,4 +353,4 @@ class TestFmrOutputContainment:
         monkeypatch.setattr(fmr_script.urllib.request, "urlopen", _boom)
 
         with pytest.raises(RuntimeError, match="stubbed network"):
-            fmr_script.fetch_fmr_data(FMR_URL, inside)
+            fmr_script.fetch_fmr_data("hierarchy", inside)
