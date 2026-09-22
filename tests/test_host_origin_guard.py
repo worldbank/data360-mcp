@@ -12,6 +12,9 @@ so the explicit external ``Host`` header below is what makes these tests meaning
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -67,3 +70,20 @@ def test_narrow_allow_list_still_blocks_unknown_host() -> None:
     with TestClient(narrow_app) as narrow:
         assert narrow.get("/mcp", headers={"host": "rogue.example"}).status_code == 421
         assert narrow.get("/mcp", headers={"host": EXTERNAL_HOST}).status_code != 421
+
+
+def test_widening_lives_where_every_entry_point_imports_it() -> None:
+    """``python -m data360.mcp_server`` builds its own app and never imports data360.server.
+
+    Runs in a subprocess: in this session other tests may have already imported
+    ``data360.server``, which would mask the widening sitting in the wrong module.
+    """
+    probe = (
+        "import data360.mcp_server, fastmcp; "
+        "print(fastmcp.settings.http_allowed_hosts, "
+        "fastmcp.settings.http_allowed_origins)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "['*'] ['*']"
