@@ -227,12 +227,6 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
 from fastmcp import settings
 settings.stateless_http = True
-# FastMCP 3.4.3 turned on Host/Origin validation by default with empty allow-lists, which
-# 421s every non-loopback Host (public domain, pod IP, proxy service name) — traffic that
-# FastMCP 2.x accepted. Widen the lists to the old behaviour; the control stays installed so
-# FASTMCP_HTTP_ALLOWED_HOSTS / FASTMCP_HTTP_ALLOWED_ORIGINS can narrow it again per deploy.
-settings.http_allowed_hosts = settings.http_allowed_hosts or ["*"]
-settings.http_allowed_origins = settings.http_allowed_origins or ["*"]
 
 # NOTE: import to be able to run the server with all definitions loaded
 # path="/mcp" means the MCP endpoint lives at /mcp (no trailing slash needed)
